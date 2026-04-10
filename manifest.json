@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "METU Mail Notifier",
+  "version": "1.1.0",
+  "description": "Read-only Roundcube inbox notifier for METU webmail.",
+  "permissions": ["alarms", "storage", "scripting", "tabs", "notifications"],
+  "host_permissions": ["*://webmail.metu.edu.tr/*", "<all_urls>"],
+  "background": {
+    "service_worker": "background/background.js"
+  },
+  "icons": {
+    "128": "icons/icon.png"
+  },
+  "action": {
+    "default_title": "METU Mail Notifier",
+    "default_popup": "popup/popup.html"
+  }
+}
