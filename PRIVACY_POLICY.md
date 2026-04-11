@@ -1,7 +1,7 @@
 # Privacy Policy — METU Mail Notifier
 
 **Extension Name:** METU Mail Notifier  
-**Version:** 1.1.0  
+**Version:** 1.3.0  
 **Platform:** Google Chrome / Microsoft Edge (Manifest V3) — manual install  
 **Last Updated:** April 11, 2026  
 
@@ -28,7 +28,7 @@ The following table describes every piece of information the extension interacts
 | Master enable/disable toggle state | You, via the popup | Turns the extension on or off; takes effect instantly | **No** |
 | Notification sound toggle state | You, via the popup | Controls whether a chime plays when a notification appears | **No** |
 | `lastSeenId` (highest IMAP UID seen) | Computed from the webmail inbox response | Tracks which messages have already been notified so duplicates are not shown | **No** — stored only in `chrome.storage.local` |
-| `lastSuccessfulCheckTs` (timestamp) | Written after each successful mail check | Records when the last check completed; not currently surfaced in the UI | **No** — stored only in `chrome.storage.local` |
+| `lastSuccessfulCheckTs` (timestamp) | Written after each successful mail check | Records when the last check completed; displayed in the popup UI | **No** — stored only in `chrome.storage.local` |
 | `hasWarnedLogin` (boolean) | Written when the "please log in" notification has been shown | Prevents showing the login warning repeatedly | **No** — stored only in `chrome.storage.local` |
 | Roundcube `_token` value | Extracted from the webmail inbox HTML page | Required as a CSRF parameter in the mail-list API request | **No** — held only in service-worker memory; discarded when the service worker is recycled |
 | Webmail inbox HTML response | Fetched from `webmail.metu.edu.tr` | Parsed locally to detect login state and extract the session token | **No** — read-only, never stored or transmitted beyond the extension |
@@ -57,7 +57,7 @@ METU Mail Notifier uses only **`chrome.storage.local`** — all data stays entir
 
 3. **`lastSeenId`** — the highest Roundcube IMAP UID observed in the last successful inbox check. Used to compute whether new messages have arrived since the previous check. Never contains email content.
 
-4. **`lastSuccessfulCheckTs`** — a Unix timestamp (ms) written after each successful mail-list response. Reserved for future diagnostic use.
+4. **`lastSuccessfulCheckTs`** — a Unix timestamp (ms) written after each successful mail-list response. Displayed in the popup UI to let you know when the extension last checked for new mail.
 
 5. **`hasWarnedLogin`** — a boolean that becomes `true` after the "please log in" one-time notification has been shown, preventing repeated alerts while you are logged out.
 

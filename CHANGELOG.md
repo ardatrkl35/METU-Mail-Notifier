@@ -6,6 +6,21 @@ The format is loosely inspired by [Keep a Changelog](https://keepachangelog.com/
 
 ---
 
+## [1.3.0] — 2026-04-11
+
+### Added
+
+- **Manual Check Button** — added a refresh icon to the popup to instantly trigger a mail check.
+- **Last Checked Time** — added a timestamp display in the popup showing the exact time of the last successful mail check.
+- **Manual Check Feedback** — manually checking now provides a "You have no new emails" visual toast if the inbox is unchanged.
+
+### Fixed
+
+- **Toggle Switch Styling** — removed the red outline on UI toggles when they are in the "off" state for a cleaner neutral look.
+- **Popup Markup** — fixed invalid nested `<label>` HTML structure in the popup.
+
+---
+
 ## [1.2.0] — 2026-04-11
 
 ### Fixed

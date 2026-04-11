@@ -260,7 +260,7 @@ async function runAuthCheck() {
   }
 }
 
-async function runMailCheck() {
+async function runMailCheck(isManual = false) {
   if (checkInProgress) {
     console.info(`${LOG_PREFIX} Mail check skipped: another check is in progress.`);
     return;
@@ -367,6 +367,14 @@ async function runMailCheck() {
       await notifyNewMail(newCount, playSound);
     } else {
       console.info(`${LOG_PREFIX} No new mail.`);
+      if (isManual) {
+        await showNotificationOverlay({
+          title: "METU Mail Notifier",
+          message: "You have no new emails.",
+          kind: "newMail",
+          playSound
+        });
+      }
     }
 
     await setStorage({
@@ -400,6 +408,28 @@ async function stopStateMachine() {
   cachedRcToken = null;
   checkInProgress = false;
 }
+
+// ── Manual Check via Message ──
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === "MANUAL_CHECK") {
+    console.info(`${LOG_PREFIX} Manual check triggered from popup.`);
+    (async () => {
+      const mailAlarm = await new Promise(resolve => chrome.alarms.get(MAIL_CHECK_ALARM, resolve));
+      if (mailAlarm) {
+        await clearAlarm(MAIL_CHECK_ALARM);
+        await runMailCheck(true);
+        await ensureMailCheckAlarm();
+      } else {
+        await clearAlarm(AUTH_CHECK_ALARM);
+        await runAuthCheck();
+        await ensureAuthCheckAlarm();
+      }
+      sendResponse({ ok: true });
+    })();
+    return true; // Keep message channel open for async response
+  }
+});
 
 // ── Lifecycle ──
 

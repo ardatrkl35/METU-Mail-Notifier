@@ -2,7 +2,7 @@
 
 > Quietly checks your METU Roundcube inbox and shows an in-page notification the moment new email arrives — no tab switching required.
 
-![Version](https://img.shields.io/badge/version-1.2.0-blue)
+![Version](https://img.shields.io/badge/version-1.3.0-blue)
 ![Manifest](https://img.shields.io/badge/manifest-v3-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Edge_%2F_Chrome-0078D4)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
@@ -29,6 +29,8 @@ METU Mail Notifier runs a two-state check loop in the background:
 - **Two notification sounds** — ascending chime for new mail, descending tone for login/session warnings (Web Audio API, no audio files needed)
 - **Sound toggle** — enable or disable notification sounds from the popup
 - **Master enable/disable toggle** — pause the entire extension with one click; the check loop stops and resumes instantly
+- **Manual check** — instantly check for new mail at the click of a button in the popup, with visual feedback
+- **Last checked time** — displays the exact time of the last successful background check in the popup
 - **Session expiry detection** — detects logout via URL redirect, login-page HTML markers, and Roundcube's `session_error` exec response
 - **Graceful fallback** — if no injectable tab is available, new-mail notifications fall back to a native OS notification; login/session warnings silently retry on the next alarm cycle instead (they are not actionable from an OS popup)
 - **Shadow DOM isolation** — the in-page toast is rendered inside a Shadow Root so it never conflicts with the host page's CSS
@@ -43,6 +45,7 @@ METU Mail Notifier runs a two-state check loop in the background:
 |---|---|---|
 | **Extension Enabled** (header toggle) | Master switch — when off, all alarms are cleared and checking stops | `chrome.storage.local` |
 | **Notification Sound** | Play a chime when a notification toast appears | `chrome.storage.local` |
+| **Last checked** & **Refresh icon** | Displays the timestamp of the last successful check; clicking the icon checks for mail immediately | `chrome.storage.local` |
 
 ---
 
@@ -228,4 +231,4 @@ This project is licensed under the **MIT License** — see the [LICENSE](./LICEN
 
 ---
 
-*METU Mail Notifier v1.2.0 · MV3 · Chrome / Edge · April 11, 2026*
+*METU Mail Notifier v1.3.0 · MV3 · Chrome / Edge · April 11, 2026*

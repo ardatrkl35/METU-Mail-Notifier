@@ -29,7 +29,7 @@
       <section class="section">
         <p class="section-label">Settings</p>
         <div class="option-list">
-          <label class="option-row" for="soundToggle">
+          <div class="option-row">
             <div class="option-text">
               <span class="option-title">Notification Sound</span>
               <span class="option-desc">Play a chime when new mail arrives</span>
@@ -40,9 +40,19 @@
                 <span class="toggle-thumb"></span>
               </span>
             </label>
-          </label>
+          </div>
         </div>
       </section>
+
+      <div class="last-check-row">
+        <span class="last-check-text">Last checked: <strong id="lastCheckTime">Never</strong></span>
+        <button id="manualCheckBtn" class="icon-btn" title="Check now" aria-label="Check now">
+          <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+          </svg>
+        </button>
+      </div>
 
       <div id="status" class="toast toast--below-pref" aria-live="polite"></div>
 
