@@ -2,11 +2,37 @@
   if (window.__metuMailNotifier) return;
   window.__metuMailNotifier = true;
 
+  let audioContext = null;
+  let audioReady = false;
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type !== "metuMailNotification") return;
     showNotification(msg);
     sendResponse({ ok: true });
   });
+
+  const unlockAudio = async () => {
+    try {
+      if (!audioContext || audioContext.state === "closed") {
+        audioContext = new AudioContext();
+      }
+      if (audioContext.state === "suspended") {
+        await audioContext.resume();
+      }
+      audioReady = audioContext.state === "running";
+      if (audioReady) {
+        window.removeEventListener("pointerdown", unlockAudio, true);
+        window.removeEventListener("keydown", unlockAudio, true);
+        window.removeEventListener("touchstart", unlockAudio, true);
+      }
+    } catch (_) {
+      audioReady = false;
+    }
+  };
+
+  window.addEventListener("pointerdown", unlockAudio, true);
+  window.addEventListener("keydown", unlockAudio, true);
+  window.addEventListener("touchstart", unlockAudio, true);
 
   function showNotification({ title, message, kind, playSound, inboxUrl }) {
     const existing = document.getElementById("__metu-mail-overlay");
@@ -146,7 +172,8 @@
 
   function playDing(kind) {
     try {
-      const ctx = new AudioContext();
+      if (!audioReady || !audioContext || audioContext.state !== "running") return;
+      const ctx = audioContext;
       const now = ctx.currentTime;
       if (kind === "newMail") {
         tone(ctx, 523.25, now, 0.15, 0.3, "sine");
@@ -155,7 +182,6 @@
         tone(ctx, 329.63, now, 0.2, 0.25, "triangle");
         tone(ctx, 261.63, now + 0.25, 0.3, 0.25, "triangle");
       }
-      setTimeout(() => ctx.close(), 2000);
     } catch (_) {
       /* audio unavailable */
     }
