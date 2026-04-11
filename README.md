@@ -2,7 +2,7 @@
 
 > Quietly checks your METU Roundcube inbox and shows an in-page notification the moment new email arrives — no tab switching required.
 
-![Version](https://img.shields.io/badge/version-1.3.0-blue)
+![Version](https://img.shields.io/badge/version-1.3.1-blue)
 ![Manifest](https://img.shields.io/badge/manifest-v3-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Edge_%2F_Chrome-0078D4)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
@@ -89,7 +89,7 @@ METU Mail Notifier runs a two-state check loop in the background:
                                    └──────────────────────────┘
 ```
 
-### Step by step
+### Step by Step
 
 1. On install or browser startup, `initializeStateMachine` clears any stale `mail_check` alarm and creates an `auth_check` alarm (fires every 1 minute).
 2. `runAuthCheck` fetches the inbox page with `credentials: "include"`. If the response contains login-page markers (`_task=login`, `name="_user"`, etc. — checked across the **full** body), the session is invalid.
@@ -108,6 +108,7 @@ Toasts appear in the **bottom-right corner** of the page you are currently viewi
 | Kind | Accent colour | Sound |
 |---|---|---|
 | New mail | Green (`#2e7d32`) | Ascending two-note chime (C5 → E5, sine) |
+| No new mail (manual check) | Red (`#e31837`) | Ascending two-note chime (C5 → E5, sine) |
 | Session expired / not logged in | Red (`#c62828`) | Descending two-note tone (E4 → C4, triangle) |
 
 - Auto-dismisses after **30 seconds** with a countdown progress bar.
@@ -124,7 +125,7 @@ Toasts appear in the **bottom-right corner** of the page you are currently viewi
    git clone https://github.com/ardatrkl35/METU-Mail-Notifier.git
    ```
 
-2. Open **Chrome** and navigate to `chrome://extensions/`  
+2. Open **Chrome** and navigate to `chrome://extensions/`
    *(For Edge, navigate to `edge://extensions/`)*
 
 3. Enable **Developer Mode** using the toggle in the top-right corner.
@@ -166,7 +167,7 @@ METU-Mail-Notifier/
 │   └── content.js             # Content script — Shadow DOM toast, Web Audio chime
 └── popup/
     ├── popup.html             # Toolbar popup markup
-    ├── popup.css              # Popup styles (Cookie Guardian design system)
+    ├── popup.css              # Popup styles
     └── popup.js               # Popup logic — toggles, storage, disabled overlay
 ```
 
@@ -231,4 +232,4 @@ This project is licensed under the **MIT License** — see the [LICENSE](./LICEN
 
 ---
 
-*METU Mail Notifier v1.3.0 · MV3 · Chrome / Edge · April 11, 2026*
+*METU Mail Notifier v1.3.1 · MV3 · Chrome / Edge · April 11, 2026*

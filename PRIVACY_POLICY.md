@@ -1,9 +1,9 @@
 # Privacy Policy — METU Mail Notifier
 
-**Extension Name:** METU Mail Notifier  
-**Version:** 1.3.0  
-**Platform:** Google Chrome / Microsoft Edge (Manifest V3) — manual install  
-**Last Updated:** April 11, 2026  
+**Extension Name:** METU Mail Notifier
+**Version:** 1.3.1
+**Platform:** Google Chrome / Microsoft Edge (Manifest V3) — manual install
+**Last Updated:** April 11, 2026
 
 ---
 
@@ -34,16 +34,16 @@ The following table describes every piece of information the extension interacts
 | Webmail inbox HTML response | Fetched from `webmail.metu.edu.tr` | Parsed locally to detect login state and extract the session token | **No** — read-only, never stored or transmitted beyond the extension |
 | Webmail mail-list JSON response | Fetched from `webmail.metu.edu.tr` | Parsed locally to count message IDs and detect session expiry | **No** — read-only, never stored or transmitted beyond the extension |
 
-### What is explicitly NOT collected
+### What is Explicitly NOT Collected
 
-- Email subjects, senders, recipients, or body content  
-- Browsing history outside `webmail.metu.edu.tr`  
-- Full URLs visited on any site  
-- Passwords, credentials, or any form data  
-- Any personally identifiable information (PII)  
-- Device identifiers  
-- IP addresses  
-- Telemetry or usage analytics  
+- Email subjects, senders, recipients, or body content
+- Browsing history outside `webmail.metu.edu.tr`
+- Full URLs visited on any site
+- Passwords, credentials, or any form data
+- Any personally identifiable information (PII)
+- Device identifiers
+- IP addresses
+- Telemetry or usage analytics
 
 ---
 
@@ -80,24 +80,31 @@ No requests are ever made to any server other than `webmail.metu.edu.tr`. No ana
 The following permissions are declared in `manifest.json`. Each one is required for a specific, functional reason:
 
 ### `alarms`
+
 **Why it is needed:** The extension uses `chrome.alarms` to schedule periodic checks — every 1 minute while waiting for a login, and every 5 minutes once logged in. Alarms are the correct MV3 mechanism for background work that must survive service-worker sleep cycles.
 
 ### `storage`
+
 **Why it is needed:** Required to read and write the five local storage keys described in Section 3 (`extensionEnabled`, `playNotificationSound`, `lastSeenId`, `lastSuccessfulCheckTs`, `hasWarnedLogin`) via `chrome.storage.local`.
 
 ### `scripting`
+
 **Why it is needed:** Required by Manifest V3 to dynamically inject `content.js` into the currently active browser tab when a notification needs to be displayed. The content script creates a Shadow DOM toast overlay and plays the Web Audio chime. It is injected on-demand only — not persistently on every page.
 
 ### `tabs`
+
 **Why it is needed:** Used by the background service worker to query the currently active tab (`chrome.tabs.query`) so the notification overlay can be injected into it via `chrome.scripting.executeScript`.
 
 ### `notifications`
+
 **Why it is needed:** Used as a fallback when no injectable tab is available (e.g. when the only open tab is a `chrome://` page). In that case a native OS notification is shown instead of the in-page overlay.
 
 ### `host_permissions: *://webmail.metu.edu.tr/*`
+
 **Why it is needed:** Required to make credentialed `fetch` requests to `webmail.metu.edu.tr` from the service worker. Without this permission the browser would block the requests.
 
 ### `host_permissions: <all_urls>`
+
 **Why it is needed:** Required to inject the notification content script into whichever tab the user is currently viewing, regardless of what website they are on. The content script only creates a toast overlay and plays a sound — it does not read, transmit, or interact with the host page's content in any way.
 
 ---
@@ -142,7 +149,7 @@ If you are located in the European Economic Area (EEA), the United Kingdom, or a
 
 To remove all data stored by the extension:
 
-1. Open the browser's DevTools on any page, open the **Application** tab, navigate to **Extension Storage → Local**, and delete any of the keys (`extensionEnabled`, `playNotificationSound`, `lastSeenId`, `lastSuccessfulCheckTs`, `hasWarnedLogin`), or  
+1. Open the browser's DevTools on any page, open the **Application** tab, navigate to **Extension Storage → Local**, and delete any of the keys (`extensionEnabled`, `playNotificationSound`, `lastSeenId`, `lastSuccessfulCheckTs`, `hasWarnedLogin`), or
 2. Uninstall METU Mail Notifier — this will remove all locally stored state.
 
 ---
@@ -151,9 +158,9 @@ To remove all data stored by the extension:
 
 If you have any questions or concerns about this Privacy Policy or the behaviour of METU Mail Notifier, please contact:
 
-**Developer / Publisher:** METU Mail Notifier  
-**Email:** `arda.ege.turkeli@gmail.com`  
-**Bug reports:** [github.com/ardatrkl35/METU-Mail-Notifier/issues](https://github.com/ardatrkl35/METU-Mail-Notifier/issues)  
+**Developer / Publisher:** METU Mail Notifier
+**Email:** `arda.ege.turkeli@gmail.com`
+**Bug reports:** [github.com/ardatrkl35/METU-Mail-Notifier/issues](https://github.com/ardatrkl35/METU-Mail-Notifier/issues)
 
 ---
 

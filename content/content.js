@@ -30,6 +30,7 @@
     }
   };
 
+  unlockAudio();
   window.addEventListener("pointerdown", unlockAudio, true);
   window.addEventListener("keydown", unlockAudio, true);
   window.addEventListener("touchstart", unlockAudio, true);
@@ -43,6 +44,7 @@
     const sr = host.attachShadow({ mode: "open" });
 
     const isNewMail = kind === "newMail";
+    const isNoNewMail = kind === "noNewMail";
 
     const style = document.createElement("style");
     style.textContent = `
@@ -97,6 +99,11 @@
       }
       .mm-bar--mail { background: #2e7d32; }
       .mm-bar--warn { background: #c62828; }
+      .mm-bar--none { background: #e31837; }
+      .mm-no {
+        font-weight: 700;
+        color: #e31837;
+      }
       .mm-btns { display: flex; flex-wrap: wrap; gap: 8px; }
       button {
         border: none; border-radius: 999px; padding: 10px 12px;
@@ -118,9 +125,9 @@
     const toast = document.createElement("div");
     toast.className = "mm-toast";
 
-    const iconClass = isNewMail ? "mm-icon--mail" : "mm-icon--warn";
-    const iconChar = isNewMail ? "\u2709" : "\u26A0";
-    const barClass = isNewMail ? "mm-bar--mail" : "mm-bar--warn";
+    const iconClass = isNewMail || isNoNewMail ? "mm-icon--mail" : "mm-icon--warn";
+    const iconChar = isNewMail || isNoNewMail ? "\u2709" : "\u26A0";
+    const barClass = isNoNewMail ? "mm-bar--none" : isNewMail ? "mm-bar--mail" : "mm-bar--warn";
     const countdownSeconds = 30;
 
     const titleEl = document.createElement("span");
@@ -140,7 +147,12 @@
     `;
 
     toast.querySelector(".mm-header").appendChild(titleEl);
-    toast.querySelector(".mm-body").textContent = message;
+    const bodyEl = toast.querySelector(".mm-body");
+    if (isNoNewMail) {
+      bodyEl.innerHTML = 'You have <span class="mm-no">NO</span> new emails.';
+    } else {
+      bodyEl.textContent = message;
+    }
 
     sr.appendChild(style);
     sr.appendChild(toast);
@@ -172,10 +184,17 @@
 
   function playDing(kind) {
     try {
+      if (!audioContext || audioContext.state === "closed") {
+        audioContext = new AudioContext();
+      }
+      if (audioContext.state === "suspended") {
+        audioContext.resume();
+      }
+      audioReady = audioContext.state === "running";
       if (!audioReady || !audioContext || audioContext.state !== "running") return;
       const ctx = audioContext;
       const now = ctx.currentTime;
-      if (kind === "newMail") {
+      if (kind === "newMail" || kind === "noNewMail") {
         tone(ctx, 523.25, now, 0.15, 0.3, "sine");
         tone(ctx, 659.25, now + 0.15, 0.2, 0.3, "sine");
       } else {

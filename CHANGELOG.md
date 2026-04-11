@@ -2,7 +2,15 @@
 
 All notable changes to **METU Mail Notifier** are documented in this file.
 
-The format is loosely inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+---
+
+## [1.3.1] — 2026-04-11
+
+### Fixed
+
+- **Empty inbox edge case** — when the mailbox contains no messages at all, a manual check now correctly shows the "no new emails" toast. The "Last checked" timestamp in the popup also updates correctly in this case. Previously the code returned early without updating state or showing any feedback.
 
 ---
 
@@ -56,6 +64,8 @@ The format is loosely inspired by [Keep a Changelog](https://keepachangelog.com/
 ---
 
 ## [1.0.0] — Initial release
+
+### Added
 
 - Two-state alarm-based check loop: `auth_check` (every 1 min) in STATE_1, `mail_check` (every 5 min) in STATE_2.
 - Session detection via full-page fetch of `webmail.metu.edu.tr/?_task=mail&_mbox=INBOX` with `credentials: "include"`.

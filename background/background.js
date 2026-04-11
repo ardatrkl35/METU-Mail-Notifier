@@ -214,7 +214,7 @@ async function isExtensionEnabled() {
 
 // ── State machine ──
 
-async function runAuthCheck() {
+async function runAuthCheck(isManual = false) {
   if (checkInProgress) {
     console.info(`${LOG_PREFIX} Auth check skipped: another check is in progress.`);
     return;
@@ -233,12 +233,12 @@ async function runAuthCheck() {
     const isUnauthenticated = await probeSessionInvalidViaInboxPage();
 
     if (isUnauthenticated) {
-      if (!hasWarnedLogin) {
-        console.info(`${LOG_PREFIX} Not authenticated. Showing one-time login warning.`);
+      if (isManual || !hasWarnedLogin) {
+        console.info(`${LOG_PREFIX} Not authenticated. Showing login warning (manual=${isManual}).`);
         const delivered = await notifyPleaseLogin(playSound);
-        if (delivered) {
+        if (delivered && !hasWarnedLogin) {
           await setStorage({ [STORAGE_KEYS.hasWarnedLogin]: true });
-        } else {
+        } else if (!delivered) {
           console.info(`${LOG_PREFIX} Login warning not delivered (no tab); will retry on next alarm.`);
         }
       } else {
@@ -284,9 +284,20 @@ async function runMailCheck(isManual = false) {
 
     if (!cachedRcToken) {
       console.info(`${LOG_PREFIX} No Roundcube token cached; re-probing inbox page.`);
-      await probeSessionInvalidViaInboxPage();
+      const sessionInvalid = await probeSessionInvalidViaInboxPage();
       if (!cachedRcToken) {
-        console.warn(`${LOG_PREFIX} Still no token after re-probe; aborting mail check.`);
+        if (sessionInvalid) {
+          console.info(`${LOG_PREFIX} Session invalid (no token after re-probe). Transitioning STATE_2 -> STATE_1.`);
+          if (isManual) {
+            await notifyPleaseLogin(playSound);
+          } else {
+            await notifySessionExpired(playSound);
+          }
+          await clearAlarm(MAIL_CHECK_ALARM);
+          await ensureAuthCheckAlarm();
+        } else {
+          console.warn(`${LOG_PREFIX} Still no token after re-probe; aborting mail check.`);
+        }
         return;
       }
     }
@@ -350,7 +361,16 @@ async function runMailCheck(isManual = false) {
     const highestId = ids.length > 0 ? ids[ids.length - 1] : null;
 
     if (highestId == null) {
-      console.info(`${LOG_PREFIX} Valid response but no message IDs found; no-op.`);
+      console.info(`${LOG_PREFIX} Valid response but inbox is empty; updating timestamp.`);
+      await setStorage({ [STORAGE_KEYS.lastSuccessfulCheckTs]: Date.now() });
+      if (isManual) {
+        await showNotificationOverlay({
+          title: "METU Mail Notifier",
+          message: "",
+          kind: "noNewMail",
+          playSound
+        });
+      }
       return;
     }
 
@@ -370,8 +390,8 @@ async function runMailCheck(isManual = false) {
       if (isManual) {
         await showNotificationOverlay({
           title: "METU Mail Notifier",
-          message: "You have no new emails.",
-          kind: "newMail",
+          message: "",
+          kind: "noNewMail",
           playSound
         });
       }
@@ -419,11 +439,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (mailAlarm) {
         await clearAlarm(MAIL_CHECK_ALARM);
         await runMailCheck(true);
-        await ensureMailCheckAlarm();
       } else {
         await clearAlarm(AUTH_CHECK_ALARM);
-        await runAuthCheck();
+        await runAuthCheck(true);
+      }
+      // Re-ensure the correct alarm based on the state after the check
+      // (the check itself may have transitioned states)
+      const authAlarmAfter = await new Promise(resolve => chrome.alarms.get(AUTH_CHECK_ALARM, resolve));
+      if (authAlarmAfter) {
         await ensureAuthCheckAlarm();
+      } else {
+        await ensureMailCheckAlarm();
       }
       sendResponse({ ok: true });
     })();
