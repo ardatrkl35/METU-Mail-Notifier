@@ -4,6 +4,18 @@ const KEYS = {
   lastSuccessfulCheckTs: "lastSuccessfulCheckTs"
 };
 
+const STATUS_CHECKING_LABEL = 'Checking...';
+
+const REASON_TEXT = {
+  new_mail:            'New mail found!',
+  no_new_mail:         'No new mail.',
+  login_required:      'Not logged in — please open webmail to sign in.',
+  network_error:       'Network error — check your connection.',
+  skipped_in_progress: 'A check is already running.',
+  token_unavailable:   'Could not read session — will retry.',
+  unknown_error:       'An unexpected error occurred.',
+};
+
 const masterToggle = document.getElementById("masterToggle");
 const soundToggle = document.getElementById("soundToggle");
 const disabledOverlay = document.getElementById("disabledOverlay");
@@ -61,6 +73,19 @@ function updateLastCheckTime(ts) {
   }
 }
 
+function updateStatusUI(status) {
+  const dot = document.getElementById('status-dot');
+  const label = document.getElementById('status-label');
+  const detail = document.getElementById('status-detail');
+  if (!status || !dot) return;
+  dot.dataset.state = status.label;
+  label.textContent = status.label;
+  detail.textContent = status.detail ?? '';
+  if (manualCheckBtn && status.label && status.label !== STATUS_CHECKING_LABEL) {
+    manualCheckBtn.classList.remove('spinning');
+  }
+}
+
 async function initialize() {
   try {
     const stored = await readStorage([KEYS.extensionEnabled, KEYS.playNotificationSound, KEYS.lastSuccessfulCheckTs]);
@@ -71,6 +96,29 @@ async function initialize() {
     soundToggle.checked = soundOn;
     applyMasterState(enabled);
     updateLastCheckTime(stored[KEYS.lastSuccessfulCheckTs]);
+
+    try {
+      const { extensionStatus } = await chrome.storage.local.get('extensionStatus');
+      updateStatusUI(extensionStatus);
+    } catch (_) { /* status not yet written — leave as Loading... */ }
+
+    const overlayBtn = document.getElementById('btn-request-overlay');
+    if (overlayBtn) {
+      chrome.permissions.contains({ origins: ['<all_urls>'] }, (granted) => {
+        overlayBtn.style.display = granted ? 'none' : 'block';
+      });
+
+      overlayBtn.addEventListener('click', () => {
+        chrome.permissions.request({ origins: ['<all_urls>'] }, (granted) => {
+          if (granted) {
+            showToast('In-page overlay enabled.');
+            overlayBtn.style.display = 'none';
+          } else {
+            showToast('Permission denied — using native notifications.', true);
+          }
+        });
+      });
+    }
   } catch (error) {
     console.error("[METU Mail Notifier] Failed to load popup state:", error);
     showToast("Could not load settings.", true);
@@ -106,18 +154,22 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes[KEYS.lastSuccessfulCheckTs]) {
     updateLastCheckTime(changes[KEYS.lastSuccessfulCheckTs].newValue);
   }
+  if (area === 'local' && changes.extensionStatus) {
+    updateStatusUI(changes.extensionStatus.newValue);
+  }
 });
 
 manualCheckBtn.addEventListener("click", () => {
   if (manualCheckBtn.classList.contains("spinning")) return;
   manualCheckBtn.classList.add("spinning");
-  chrome.runtime.sendMessage({ type: "MANUAL_CHECK" }, (response) => {
+  chrome.runtime.sendMessage({ type: "MANUAL_CHECK" }, (result) => {
     manualCheckBtn.classList.remove("spinning");
-    if (chrome.runtime.lastError || !response?.ok) {
-      showToast("Manual check failed.", true);
-    } else {
-      showToast("Checked successfully.");
+    if (chrome.runtime.lastError) {
+      showToast('Could not reach background. Try again.', true);
+      return;
     }
+    const text = REASON_TEXT[result?.reason] ?? 'Check complete.';
+    showToast(text);
   });
 });
 

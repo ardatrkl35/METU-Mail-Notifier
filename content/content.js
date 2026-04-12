@@ -1,6 +1,6 @@
 (() => {
-  if (window.__metuMailNotifier) return;
-  window.__metuMailNotifier = true;
+  if (window.__metuMailInjected) return;
+  window.__metuMailInjected = true;
 
   let audioContext = null;
   let audioReady = false;
@@ -31,9 +31,9 @@
   };
 
   unlockAudio();
-  window.addEventListener("pointerdown", unlockAudio, true);
-  window.addEventListener("keydown", unlockAudio, true);
-  window.addEventListener("touchstart", unlockAudio, true);
+  window.addEventListener("pointerdown", unlockAudio, { once: true, capture: true });
+  window.addEventListener("keydown", unlockAudio, { once: true, capture: true });
+  window.addEventListener("touchstart", unlockAudio, { once: true, capture: true });
 
   function showNotification({ title, message, kind, playSound, inboxUrl }) {
     const existing = document.getElementById("__metu-mail-overlay");
@@ -156,7 +156,8 @@
 
     sr.appendChild(style);
     sr.appendChild(toast);
-    document.body.appendChild(host);
+    const mountTarget = document.body ?? document.documentElement;
+    mountTarget.appendChild(host);
 
     const bar = sr.querySelector(".mm-bar");
     requestAnimationFrame(() => {
@@ -172,7 +173,11 @@
     };
 
     sr.getElementById("mmOpenBtn").addEventListener("click", () => {
-      window.open(inboxUrl, "_blank");
+      chrome.runtime.sendMessage({ type: "OPEN_INBOX", url: inboxUrl }, () => {
+        if (chrome.runtime.lastError) {
+          console.warn("[METU Mail Notifier] OPEN_INBOX:", chrome.runtime.lastError.message);
+        }
+      });
       dismiss();
     });
     sr.getElementById("mmDismissBtn").addEventListener("click", dismiss);

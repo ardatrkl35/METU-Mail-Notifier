@@ -51,7 +51,6 @@ html, body {
   font-weight: 400;
   line-height: 1.43;
   -webkit-font-smoothing: antialiased;
-  user-select: none;
   overflow-x: hidden;
 }
 
@@ -344,4 +343,57 @@ body * {
 
 @keyframes spin {
   100% { transform: rotate(360deg); }
+}
+
+/* ── Status Row ────────────────────────────────────────────────────── */
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 6px 0;
+  margin-top: 8px;
+  border-top: 1px solid var(--border-subtle, #eee);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #94a3b8;
+}
+
+.status-dot[data-state="Monitoring"]  { background: #22c55e; }
+.status-dot[data-state="Checking..."] { background: #f59e0b; }
+.status-dot[data-state="Logged out"]  { background: #ef4444; }
+.status-dot[data-state="Paused"]      { background: #94a3b8; }
+.status-dot[data-state="Error"]       { background: #ef4444; }
+
+.status-label { font-weight: 600; }
+.status-detail { color: #6b7280; font-size: 11px; }
+
+.btn-secondary {
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #f9fafb;
+}
+
+button:focus-visible,
+input:focus-visible,
+[role="switch"]:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

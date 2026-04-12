@@ -16,7 +16,7 @@
       </div>
       <div class="master-toggle-wrap">
         <label class="toggle" title="Enable / Disable extension">
-          <input type="checkbox" id="masterToggle" />
+          <input type="checkbox" id="masterToggle" aria-label="Enable extension" />
           <span class="toggle-track">
             <span class="toggle-thumb"></span>
           </span>
@@ -35,7 +35,7 @@
               <span class="option-desc">Play a chime when new mail arrives</span>
             </div>
             <label class="toggle toggle--sm">
-              <input type="checkbox" id="soundToggle" />
+              <input type="checkbox" id="soundToggle" aria-label="Play notification sound" />
               <span class="toggle-track">
                 <span class="toggle-thumb"></span>
               </span>
@@ -55,6 +55,16 @@
       </div>
 
       <div id="status" class="toast toast--below-pref" aria-live="polite"></div>
+
+      <div class="status-row" id="status-row" aria-live="polite" aria-label="Extension status">
+        <span class="status-dot" id="status-dot"></span>
+        <span class="status-label" id="status-label">Loading...</span>
+        <span class="status-detail" id="status-detail"></span>
+      </div>
+
+      <button id="btn-request-overlay" class="btn-secondary" style="display:none">
+        Enable in-page overlay
+      </button>
 
       <!-- ── Disabled overlay (inside main so header toggle stays accessible) -->
       <div class="disabled-overlay" id="disabledOverlay">

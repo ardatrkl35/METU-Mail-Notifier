@@ -4,19 +4,124 @@ const AUTH_CHECK_INTERVAL_MINUTES = 1;
 const MAIL_CHECK_INTERVAL_MINUTES = 5;
 const BASE_URL = "https://webmail.metu.edu.tr/";
 const INBOX_URL = "https://webmail.metu.edu.tr/?_task=mail&_mbox=INBOX";
-const OVERLAY_AUTO_CLOSE_MS = 30000;
+// OVERLAY_AUTO_CLOSE_MS removed — unused constant (overlay close handled by content script)
+const MAIL_NOTIFICATION_ID = 'metumail-new-mail';
+const LOGIN_NOTIFICATION_ID = 'metumail-login-required';
 
 const STORAGE_KEYS = {
-  extensionEnabled: "extensionEnabled",
-  hasWarnedLogin: "hasWarnedLogin",
-  lastSeenId: "lastSeenId",
+  extensionEnabled:      "extensionEnabled",
+  hasWarnedLogin:        "hasWarnedLogin",       // keep during migration — A5 reads old value on first load
+  lastLoginWarningTs:    "lastLoginWarningTs",
+  lastSeenId:            "lastSeenId",
   playNotificationSound: "playNotificationSound",
-  lastSuccessfulCheckTs: "lastSuccessfulCheckTs"
+  lastSuccessfulCheckTs: "lastSuccessfulCheckTs",
+  machineState:          "machineState",
 };
+
+const LOGIN_WARNING_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+
+const AUTH_STATE = Object.freeze({
+  AUTHENTICATED:   'AUTHENTICATED',
+  UNAUTHENTICATED: 'UNAUTHENTICATED',
+  UNKNOWN:         'UNKNOWN',
+});
+
+const AUTH_REASON = Object.freeze({
+  TOKEN_FOUND:          'token_found',
+  TOKEN_MISSING:        'token_missing',
+  LOGIN_MARKERS_FOUND:  'login_markers_found',
+  LOGIN_REDIRECT:       'login_redirect',
+  HTTP_ERROR:           'http_error',
+  NETWORK_ERROR:        'network_error',
+  TIMEOUT:              'timeout',
+});
+
+const REASON = Object.freeze({
+  NEW_MAIL:            'new_mail',
+  NO_NEW_MAIL:         'no_new_mail',
+  LOGIN_REQUIRED:      'login_required',
+  NETWORK_ERROR:       'network_error',
+  SKIPPED_IN_PROGRESS: 'skipped_in_progress',
+  TOKEN_UNAVAILABLE:   'token_unavailable',
+  UNKNOWN_ERROR:       'unknown_error',
+  STALE_GENERATION:    'stale_generation',
+  RUNTIME_RECONCILE:   'runtime_reconcile',
+  EXTENSION_DISABLED:  'extension_disabled',
+});
+
+const STATUS = Object.freeze({
+  PAUSED:     'Paused',
+  CHECKING:   'Checking...',
+  LOGGED_OUT: 'Logged out',
+  MONITORING: 'Monitoring',
+  ERROR:      'Error',
+});
+
+async function writeStatus(label, detail = '') {
+  await chrome.storage.local.set({
+    extensionStatus: { label, detail, ts: Date.now() }
+  });
+}
+
+/** After CHECKING was written, stale-generation exits must not leave the UI on "Checking...". */
+async function writeStaleCheckStatus() {
+  const stored = await getStorage([STORAGE_KEYS.machineState]);
+  const persisted = stored[STORAGE_KEYS.machineState] === 'STATE_2' ? 'STATE_2' : 'STATE_1';
+  const label = persisted === 'STATE_2' ? STATUS.MONITORING : STATUS.LOGGED_OUT;
+  await writeStatus(label, '');
+}
+
+function isRoundcubeMailTabUrl(url) {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    if (u.hostname !== 'webmail.metu.edu.tr') return false;
+    return u.searchParams.get('_task') === 'mail';
+  } catch (_) {
+    return false;
+  }
+}
+
+async function openOrFocusInbox(targetUrl) {
+  const openUrl = (targetUrl && String(targetUrl).trim()) || INBOX_URL;
+  const tabs = await chrome.tabs.query({ url: 'https://webmail.metu.edu.tr/*' });
+  const existing = tabs.find((t) => isRoundcubeMailTabUrl(t.url));
+  if (existing?.id != null) {
+    await chrome.tabs.update(existing.id, { active: true });
+    if (existing.windowId != null) {
+      try {
+        await chrome.windows.update(existing.windowId, { focused: true });
+      } catch (_) { /* may require optional windows permission */ }
+    }
+    return;
+  }
+  await chrome.tabs.create({ url: openUrl });
+}
+
+function makeResult(ok, state, reason, newCount = 0) {
+  return { ok, state, reason, newCount, timestamp: Date.now() };
+}
+
+let tokenUnavailableCount = 0;
+const TOKEN_UNAVAILABLE_THRESHOLD = 3;
+// NOTE: tokenUnavailableCount resets on service worker recycle.
+// This is acceptable — worst case, the threshold restarts after recycle.
+// Do not persist to storage to avoid stale count across browser restarts.
 
 let checkInProgress = false;
 let cachedRcToken = null;
+let currentState = 'STATE_1';
 const LOG_PREFIX = "[METU Mail Notifier]";
+
+let currentGeneration = 0;
+let authCheckController = null;
+let mailCheckController = null;
+
+function makeGenerationGuard(capturedGeneration) {
+  return function isStale() {
+    return capturedGeneration !== currentGeneration;
+  };
+}
 
 function getStorage(keys) {
   return new Promise((resolve, reject) => {
@@ -42,34 +147,49 @@ function setStorage(values) {
   });
 }
 
-async function clearAlarm(name) {
+function getAlarm(name) {
+  return new Promise((resolve) => {
+    chrome.alarms.get(name, resolve);
+  });
+}
+
+async function clearAlarmForGateway(name) {
   await new Promise((resolve) => {
     chrome.alarms.clear(name, resolve);
   });
   console.info(`${LOG_PREFIX} Cleared alarm: ${name}`);
 }
 
-async function ensureAuthCheckAlarm() {
-  const existing = await new Promise((resolve) => {
-    chrome.alarms.get(AUTH_CHECK_ALARM, resolve);
-  });
-  if (!existing) {
-    chrome.alarms.create(AUTH_CHECK_ALARM, { periodInMinutes: AUTH_CHECK_INTERVAL_MINUTES });
-    console.info(
-      `${LOG_PREFIX} Created alarm: ${AUTH_CHECK_ALARM} (every ${AUTH_CHECK_INTERVAL_MINUTES} min)`
-    );
+/**
+ * Single gateway for machine state persistence and alarm schedule.
+ * All chrome.alarms create/clear for this extension must go through here.
+ */
+async function transitionToState(nextState, reason) {
+  if (reason === REASON.EXTENSION_DISABLED) {
+    currentState = 'STATE_1';
+    await setStorage({ [STORAGE_KEYS.machineState]: 'STATE_1' });
+    await clearAlarmForGateway(AUTH_CHECK_ALARM);
+    await clearAlarmForGateway(MAIL_CHECK_ALARM);
+    console.info(`${LOG_PREFIX} Extension disabled: alarms cleared; ${STORAGE_KEYS.machineState}=STATE_1.`);
+    return;
   }
-}
 
-async function ensureMailCheckAlarm() {
-  const existing = await new Promise((resolve) => {
-    chrome.alarms.get(MAIL_CHECK_ALARM, resolve);
-  });
-  if (!existing) {
+  if (nextState !== 'STATE_1' && nextState !== 'STATE_2') {
+    console.warn(`${LOG_PREFIX} transitionToState: invalid nextState`, nextState);
+    return;
+  }
+
+  currentState = nextState;
+  await setStorage({ [STORAGE_KEYS.machineState]: nextState });
+  await clearAlarmForGateway(AUTH_CHECK_ALARM);
+  await clearAlarmForGateway(MAIL_CHECK_ALARM);
+
+  if (nextState === 'STATE_1') {
+    chrome.alarms.create(AUTH_CHECK_ALARM, { periodInMinutes: AUTH_CHECK_INTERVAL_MINUTES });
+    console.info(`${LOG_PREFIX} Alarms set for STATE_1 (auth check). reason=${reason}`);
+  } else {
     chrome.alarms.create(MAIL_CHECK_ALARM, { periodInMinutes: MAIL_CHECK_INTERVAL_MINUTES });
-    console.info(
-      `${LOG_PREFIX} Created alarm: ${MAIL_CHECK_ALARM} (every ${MAIL_CHECK_INTERVAL_MINUTES} min)`
-    );
+    console.info(`${LOG_PREFIX} Alarms set for STATE_2 (mail check). reason=${reason}`);
   }
 }
 
@@ -85,27 +205,79 @@ function looksLikeRoundcubeLogin(text) {
   return markerScore >= 2;
 }
 
-async function probeSessionInvalidViaInboxPage() {
+/**
+ * Extracts Roundcube session token from inbox HTML.
+ * Strategy 1: DOMParser (more reliable, handles attribute order variations).
+ * Strategy 2: Raw regex fallback (handles cases where DOMParser is unavailable).
+ * Returns token string or null.
+ */
+function extractRoundcubeToken(html) {
+  // Strategy 1: DOMParser
   try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+
+    // Hidden input: <input name="_token" value="..."> or <input name="request_token" ...>
+    const input = doc.querySelector('input[name="_token"]')
+                || doc.querySelector('input[name="request_token"]');
+    if (input?.value) return input.value;
+
+    // Script content: request_token: 'abc' or request_token = 'abc'
+    const scripts = Array.from(doc.querySelectorAll('script'));
+    for (const s of scripts) {
+      const match = s.textContent.match(/request_token\s*[:=]\s*['"]([a-zA-Z0-9_-]{10,})['"]/);
+      if (match) return match[1];
+    }
+  } catch (_) { /* DOMParser unavailable or threw — fall through to regex */ }
+
+  // Strategy 2: Raw regex fallback
+  const hiddenInputMatch = html.match(/name=["']_?(?:request_)?token["']\s+value=["']([a-zA-Z0-9_-]{10,})["']/);
+  if (hiddenInputMatch) return hiddenInputMatch[1];
+
+  const jsTokenMatch = html.match(/request_token\s*[:=]\s*['"]([a-zA-Z0-9_-]{10,})['"]/);
+  if (jsTokenMatch) return jsTokenMatch[1];
+
+  return null;
+}
+
+async function probeAuthState(signal) {
+  try {
+    const fetchSignal = signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(10_000)])
+      : AbortSignal.timeout(10_000);
+
     const response = await fetch(INBOX_URL, {
       method: "GET",
       credentials: "include",
-      cache: "no-store"
+      cache: "no-store",
+      signal: fetchSignal,
     });
-    const finalUrl = response.url || "";
-    const text = await response.text();
-    const invalidByUrl = finalUrl.includes("_task=login");
-    const invalidByBody = looksLikeRoundcubeLogin(text);
-    const result = invalidByUrl || invalidByBody;
 
-    if (!result) {
-      const tokenMatch = text.match(/name=['"]_token['"]\s+value=['"]([^'"]+)['"]/)
-        || text.match(/request_token['"]\s*[:,]\s*['"]([^'"]+)['"]/);
-      if (tokenMatch) cachedRcToken = tokenMatch[1];
+    if (!response.ok) {
+      const finalUrl = response.url || "";
+      if (finalUrl.includes("_task=login")) {
+        return { state: AUTH_STATE.UNAUTHENTICATED, reason: AUTH_REASON.LOGIN_REDIRECT, token: null };
+      }
+      return { state: AUTH_STATE.UNKNOWN, reason: AUTH_REASON.HTTP_ERROR, token: null };
     }
-    return result;
+
+    const html = await response.text();
+    const finalUrl = response.url || "";
+
+    if (finalUrl.includes("_task=login") || looksLikeRoundcubeLogin(html)) {
+      return { state: AUTH_STATE.UNAUTHENTICATED, reason: AUTH_REASON.LOGIN_MARKERS_FOUND, token: null };
+    }
+
+    const token = extractRoundcubeToken(html);
+    if (token) {
+      return { state: AUTH_STATE.AUTHENTICATED, reason: AUTH_REASON.TOKEN_FOUND, token };
+    }
+
+    return { state: AUTH_STATE.UNKNOWN, reason: AUTH_REASON.TOKEN_MISSING, token: null };
   } catch (error) {
-    return false;
+    if (error.name === 'AbortError' || error.name === 'TimeoutError') {
+      return { state: AUTH_STATE.UNKNOWN, reason: AUTH_REASON.TIMEOUT, token: null };
+    }
+    return { state: AUTH_STATE.UNKNOWN, reason: AUTH_REASON.NETWORK_ERROR, token: null };
   }
 }
 
@@ -124,6 +296,15 @@ async function tryInjectOverlay(tabId, payload) {
   await chrome.tabs.sendMessage(tabId, payload);
 }
 
+function canInjectOverlay() {
+  return new Promise((resolve) => {
+    chrome.permissions.contains(
+      { origins: ['<all_urls>'] },
+      (granted) => resolve(granted)
+    );
+  });
+}
+
 async function showNotificationOverlay({ title, message, kind, playSound }) {
   const payload = {
     type: "metuMailNotification",
@@ -131,42 +312,57 @@ async function showNotificationOverlay({ title, message, kind, playSound }) {
     inboxUrl: INBOX_URL
   };
 
-  // 1) Try the active tab in the focused window
-  try {
-    const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    if (active?.id && isInjectableUrl(active.url)) {
-      await tryInjectOverlay(active.id, payload);
-      return true;
-    }
-  } catch (_) { /* fall through */ }
+  const overlayGranted = await canInjectOverlay();
 
-  // 2) Try any active tab in any window
-  try {
-    const activeTabs = await chrome.tabs.query({ active: true });
-    for (const tab of activeTabs) {
-      if (tab.id && isInjectableUrl(tab.url)) {
-        try {
-          await tryInjectOverlay(tab.id, payload);
-          return true;
-        } catch (_) { continue; }
+  if (overlayGranted) {
+    // 1) Try the active tab in the focused window
+    try {
+      const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      if (active?.id && isInjectableUrl(active.url)) {
+        await tryInjectOverlay(active.id, payload);
+        return true;
       }
-    }
-  } catch (_) { /* fall through */ }
+    } catch (_) { /* fall through */ }
 
-  // 3) For login/session warnings there is no injectable tab yet (e.g. browser
-  //    just started). Return false so the caller knows delivery failed and should
-  //    not mark the warning as sent — the auth_check alarm will retry next minute.
-  if (kind !== "newMail") {
-    console.info(`${LOG_PREFIX} No injectable tab for ${kind} notification; will retry on next alarm.`);
+    // 2) Try any active tab in any window
+    try {
+      const activeTabs = await chrome.tabs.query({ active: true });
+      for (const tab of activeTabs) {
+        if (tab.id && isInjectableUrl(tab.url)) {
+          try {
+            await tryInjectOverlay(tab.id, payload);
+            return true;
+          } catch (_) { continue; }
+        }
+      }
+    } catch (_) { /* fall through */ }
+
+    // 3) In overlay mode, keep login/session warnings tab-bound; if no injectable
+    // tab exists, return false so automatic retries continue.
+    if (kind !== "newMail") {
+      console.info(`${LOG_PREFIX} No injectable tab for ${kind} notification; will retry on next alarm.`);
+      return false;
+    }
+
+    console.info(`${LOG_PREFIX} No injectable tab; using native notification for new mail.`);
+  } else {
+    // Optional permission not granted: operate in native-notification mode.
+    console.info(`${LOG_PREFIX} Overlay permission not granted; using native notification for ${kind}.`);
+  }
+
+  if (kind === "noNewMail") {
     return false;
   }
 
-  console.info(`${LOG_PREFIX} No injectable tab; using native notification for new mail.`);
+  const notificationId = kind === "newMail" ? MAIL_NOTIFICATION_ID : LOGIN_NOTIFICATION_ID;
+  const fallbackMessage = message || (kind === "newMail"
+    ? "You have new email."
+    : "Please log in to webmail.metu.edu.tr.");
   try {
-    await chrome.notifications.create(`metu-notify-${Date.now()}`, {
+    await chrome.notifications.create(notificationId, {
       type: "basic",
       title,
-      message,
+      message: fallbackMessage,
       iconUrl: chrome.runtime.getURL("icons/icon.png")
     });
     return true;
@@ -212,67 +408,187 @@ async function isExtensionEnabled() {
   return stored[STORAGE_KEYS.extensionEnabled] !== false;
 }
 
+async function reconcileRuntimeState() {
+  currentGeneration++;
+  if (!(await isExtensionEnabled())) {
+    console.info(`${LOG_PREFIX} Reconcile: extension disabled; clearing alarms.`);
+    await transitionToState('STATE_1', REASON.EXTENSION_DISABLED);
+    return;
+  }
+
+  const stored = await getStorage([STORAGE_KEYS.machineState]);
+  const persisted = stored[STORAGE_KEYS.machineState] === 'STATE_2' ? 'STATE_2' : 'STATE_1';
+  currentState = persisted;
+
+  const authAlarm = await getAlarm(AUTH_CHECK_ALARM);
+  const mailAlarm = await getAlarm(MAIL_CHECK_ALARM);
+
+  if (persisted === 'STATE_2') {
+    if (mailAlarm && !authAlarm) {
+      console.info(`${LOG_PREFIX} Reconcile: STATE_2 and mail_check alarm OK; no gateway call.`);
+      return;
+    }
+    console.info(`${LOG_PREFIX} Reconcile: repairing STATE_2 alarms (mail=${!!mailAlarm} auth=${!!authAlarm}).`);
+    await transitionToState('STATE_2', REASON.RUNTIME_RECONCILE);
+    return;
+  }
+
+  if (authAlarm && !mailAlarm) {
+    console.info(`${LOG_PREFIX} Reconcile: STATE_1 and auth_check alarm OK; no gateway call.`);
+    return;
+  }
+  console.info(`${LOG_PREFIX} Reconcile: repairing STATE_1 alarms (auth=${!!authAlarm} mail=${!!mailAlarm}).`);
+  await transitionToState('STATE_1', REASON.RUNTIME_RECONCILE);
+}
+
+function isValidCheckResult(r) {
+  return (
+    r != null &&
+    typeof r === 'object' &&
+    typeof r.ok === 'boolean' &&
+    (r.state === 'STATE_1' || r.state === 'STATE_2') &&
+    typeof r.reason === 'string'
+  );
+}
+
 // ── State machine ──
 
 async function runAuthCheck(isManual = false) {
   if (checkInProgress) {
     console.info(`${LOG_PREFIX} Auth check skipped: another check is in progress.`);
-    return;
+    return makeResult(false, 'STATE_1', REASON.SKIPPED_IN_PROGRESS);
   }
   if (!(await isExtensionEnabled())) {
     console.info(`${LOG_PREFIX} Extension disabled; skipping auth check.`);
-    return;
+    return makeResult(false, 'STATE_1', REASON.SKIPPED_IN_PROGRESS);
   }
+
+  const capturedGeneration = currentGeneration;
+  const isStale = makeGenerationGuard(capturedGeneration);
+  authCheckController = new AbortController();
+  const signal = authCheckController.signal;
+
   checkInProgress = true;
 
   try {
     console.info(`${LOG_PREFIX} STATE_1 (LOGGED_OUT): running auth check.`);
-    const stored = await getStorage([STORAGE_KEYS.hasWarnedLogin, STORAGE_KEYS.playNotificationSound]);
-    const hasWarnedLogin = stored[STORAGE_KEYS.hasWarnedLogin] === true;
+    await writeStatus(STATUS.CHECKING);
+    const stored = await getStorage([
+      STORAGE_KEYS.hasWarnedLogin,
+      STORAGE_KEYS.lastLoginWarningTs,
+      STORAGE_KEYS.playNotificationSound
+    ]);
+    // One-time migration: if old boolean flag was set, treat it as if warned 30 min ago
+    // so the user gets reminded again soon rather than never.
+    const legacyWarned = stored[STORAGE_KEYS.hasWarnedLogin] === true;
+    const storedTs = stored[STORAGE_KEYS.lastLoginWarningTs];
+    const lastLoginWarningTs = Number.isFinite(storedTs)
+      ? storedTs
+      : (legacyWarned ? Date.now() - LOGIN_WARNING_INTERVAL_MS : 0);
+    const now = Date.now();
+    const shouldWarnThrottle = (now - lastLoginWarningTs) > LOGIN_WARNING_INTERVAL_MS;
     const playSound = stored[STORAGE_KEYS.playNotificationSound] !== false;
-    const isUnauthenticated = await probeSessionInvalidViaInboxPage();
+    const probe = await probeAuthState(signal);
 
-    if (isUnauthenticated) {
-      if (isManual || !hasWarnedLogin) {
-        console.info(`${LOG_PREFIX} Not authenticated. Showing login warning (manual=${isManual}).`);
+    if (probe.state === AUTH_STATE.AUTHENTICATED) {
+      if (isStale()) {
+        console.log('[auth] stale generation — discarding result');
+        await writeStaleCheckStatus();
+        return makeResult(false, currentState, REASON.STALE_GENERATION);
+      }
+      cachedRcToken = probe.token;
+      console.info(`${LOG_PREFIX} Authenticated (${probe.reason}). Transitioning STATE_1 -> STATE_2.`);
+      await transitionToState('STATE_2', REASON.NO_NEW_MAIL);
+      await writeStatus(STATUS.MONITORING);
+      return makeResult(true, 'STATE_2', REASON.NO_NEW_MAIL);
+    } else if (probe.state === AUTH_STATE.UNAUTHENTICATED) {
+      if (isManual || shouldWarnThrottle) {
+        if (isStale()) {
+          await writeStaleCheckStatus();
+          return makeResult(false, currentState, REASON.STALE_GENERATION);
+        }
+        console.info(`${LOG_PREFIX} Not authenticated (${probe.reason}). Showing login warning (manual=${isManual}).`);
         const delivered = await notifyPleaseLogin(playSound);
-        if (delivered && !hasWarnedLogin) {
-          await setStorage({ [STORAGE_KEYS.hasWarnedLogin]: true });
+        if (delivered && !isManual) {
+          // Only update throttle timestamp for automatic warnings — manual checks never update it
+          await setStorage({
+            [STORAGE_KEYS.lastLoginWarningTs]: now,
+            [STORAGE_KEYS.hasWarnedLogin]: true   // keep in sync during migration
+          });
         } else if (!delivered) {
           console.info(`${LOG_PREFIX} Login warning not delivered (no tab); will retry on next alarm.`);
         }
       } else {
-        console.info(`${LOG_PREFIX} Not authenticated. Login warning already shown; skipping.`);
+        console.info(`${LOG_PREFIX} Not authenticated (${probe.reason}). Login warning throttled; skipping.`);
       }
-      return;
+      await writeStatus(STATUS.LOGGED_OUT, probe.reason);
+      return makeResult(false, 'STATE_1', REASON.LOGIN_REQUIRED);
+    } else {
+      console.info(`${LOG_PREFIX} Auth probe unknown — staying in STATE_1: ${probe.reason}`);
+      await writeStatus(STATUS.ERROR, probe.reason);
+      return makeResult(false, 'STATE_1', REASON.NETWORK_ERROR);
     }
-
-    console.info(
-      `${LOG_PREFIX} Authenticated. Transitioning STATE_1 -> STATE_2 (auth_check -> mail_check).`
-    );
-    await setStorage({ [STORAGE_KEYS.hasWarnedLogin]: false });
-    await clearAlarm(AUTH_CHECK_ALARM);
-    await ensureMailCheckAlarm();
   } catch (error) {
     console.error(`${LOG_PREFIX} Auth check failed safely:`, error);
+    await writeStatus(STATUS.ERROR, error.message);
+    return makeResult(false, 'STATE_1', REASON.UNKNOWN_ERROR);
   } finally {
     checkInProgress = false;
+    authCheckController = null;
   }
+}
+
+/**
+ * Parses the Roundcube mail-list exec response string.
+ * Guards against null/non-string input, session errors, and missing UIDs.
+ * Returns { ok, sessionError, uids }
+ */
+function parseMailExecResponse(execStr) {
+  if (!execStr || typeof execStr !== 'string') {
+    console.warn(`${LOG_PREFIX} [mail] mail-list exec is empty or non-string`);
+    return { ok: false, sessionError: false, uids: [] };
+  }
+
+  if (execStr.includes('session_error') || execStr.includes('invalid_request') || execStr.includes('_task=login')) {
+    console.warn(`${LOG_PREFIX} [mail] session error detected in exec response`);
+    return { ok: false, sessionError: true, uids: [] };
+  }
+
+  const uids = [];
+  const regex = /add_message_row\s*\(\s*['"]?(\d+)['"]?/g;
+  let match;
+  while ((match = regex.exec(execStr)) !== null) {
+    const id = Number(match[1]);
+    if (Number.isFinite(id)) uids.push(id);
+  }
+
+  if (uids.length === 0 && execStr.length > 100) {
+    console.warn(`${LOG_PREFIX} [mail] exec has content but no parseable UIDs`);
+  }
+
+  return { ok: true, sessionError: false, uids };
 }
 
 async function runMailCheck(isManual = false) {
   if (checkInProgress) {
     console.info(`${LOG_PREFIX} Mail check skipped: another check is in progress.`);
-    return;
+    return makeResult(false, 'STATE_2', REASON.SKIPPED_IN_PROGRESS);
   }
   if (!(await isExtensionEnabled())) {
     console.info(`${LOG_PREFIX} Extension disabled; skipping mail check.`);
-    return;
+    return makeResult(false, 'STATE_2', REASON.SKIPPED_IN_PROGRESS);
   }
+
+  const capturedGeneration = currentGeneration;
+  const isStale = makeGenerationGuard(capturedGeneration);
+  mailCheckController = new AbortController();
+  const signal = mailCheckController.signal;
+
   checkInProgress = true;
 
   try {
     console.info(`${LOG_PREFIX} STATE_2 (LOGGED_IN): running mail check.`);
+    await writeStatus(STATUS.CHECKING);
     const stored = await getStorage([
       STORAGE_KEYS.lastSeenId,
       STORAGE_KEYS.playNotificationSound
@@ -284,84 +600,171 @@ async function runMailCheck(isManual = false) {
 
     if (!cachedRcToken) {
       console.info(`${LOG_PREFIX} No Roundcube token cached; re-probing inbox page.`);
-      const sessionInvalid = await probeSessionInvalidViaInboxPage();
+      const reprobe = await probeAuthState(signal);
+      if (reprobe.token) {
+        if (isStale()) {
+          await writeStaleCheckStatus();
+          return makeResult(false, currentState, REASON.STALE_GENERATION);
+        }
+        cachedRcToken = reprobe.token;
+      }
       if (!cachedRcToken) {
-        if (sessionInvalid) {
+        if (reprobe.state === AUTH_STATE.UNAUTHENTICATED) {
+          if (isStale()) {
+            await writeStaleCheckStatus();
+            return makeResult(false, currentState, REASON.STALE_GENERATION);
+          }
           console.info(`${LOG_PREFIX} Session invalid (no token after re-probe). Transitioning STATE_2 -> STATE_1.`);
           if (isManual) {
             await notifyPleaseLogin(playSound);
           } else {
             await notifySessionExpired(playSound);
           }
-          await clearAlarm(MAIL_CHECK_ALARM);
-          await ensureAuthCheckAlarm();
+          await transitionToState('STATE_1', REASON.LOGIN_REQUIRED);
+          await writeStatus(STATUS.LOGGED_OUT);
+          return makeResult(false, 'STATE_1', REASON.LOGIN_REQUIRED);
         } else {
-          console.warn(`${LOG_PREFIX} Still no token after re-probe; aborting mail check.`);
+          if (isStale()) {
+            await writeStaleCheckStatus();
+            return makeResult(false, currentState, REASON.STALE_GENERATION);
+          }
+          tokenUnavailableCount++;
+          console.log(`[mail] token unavailable (${tokenUnavailableCount}/${TOKEN_UNAVAILABLE_THRESHOLD}), reason: token_unavailable`);
+
+          if (tokenUnavailableCount >= TOKEN_UNAVAILABLE_THRESHOLD) {
+            console.log('[mail] threshold reached — clearing token cache, falling back to STATE_1');
+            if (isStale()) {
+              await writeStaleCheckStatus();
+              return makeResult(false, currentState, REASON.STALE_GENERATION);
+            }
+            tokenUnavailableCount = 0;
+            cachedRcToken = null;
+            await transitionToState('STATE_1', REASON.TOKEN_UNAVAILABLE);
+            await writeStatus(STATUS.LOGGED_OUT);
+            return makeResult(false, 'STATE_1', REASON.TOKEN_UNAVAILABLE);
+          }
+          await writeStatus(STATUS.MONITORING);
+          return makeResult(false, 'STATE_2', REASON.TOKEN_UNAVAILABLE);
         }
-        return;
       }
     }
+
+    const exitLoggedOutFromListResponse = async (logMsg) => {
+      console.info(logMsg);
+      cachedRcToken = null;
+      if (isStale()) {
+        await writeStaleCheckStatus();
+        return makeResult(false, currentState, REASON.STALE_GENERATION);
+      }
+      if (isManual) {
+        await notifyPleaseLogin(playSound);
+      } else {
+        await notifySessionExpired(playSound);
+      }
+      await transitionToState('STATE_1', REASON.LOGIN_REQUIRED);
+      await writeStatus(STATUS.LOGGED_OUT);
+      return makeResult(false, 'STATE_1', REASON.LOGIN_REQUIRED);
+    };
 
     const listUrl = `${BASE_URL}?_task=mail&_action=list&_mbox=INBOX&_remote=1&_token=${encodeURIComponent(cachedRcToken)}`;
 
-    const controller = new AbortController();
-    const timeoutHandle = setTimeout(() => controller.abort(), 20000);
+    const fetchSignal = AbortSignal.any([signal, AbortSignal.timeout(20_000)]);
+    const response = await fetch(listUrl, {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+      signal: fetchSignal
+    });
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        console.info(`${LOG_PREFIX} Session expired by HTTP ${response.status}. Transitioning STATE_2 -> STATE_1.`);
+        cachedRcToken = null;
+        if (isStale()) {
+          await writeStaleCheckStatus();
+          return makeResult(false, currentState, REASON.STALE_GENERATION);
+        }
+        await notifySessionExpired(playSound);
+        await transitionToState('STATE_1', REASON.LOGIN_REQUIRED);
+        await writeStatus(STATUS.LOGGED_OUT);
+        return makeResult(false, 'STATE_1', REASON.LOGIN_REQUIRED);
+      } else {
+        console.warn(`${LOG_PREFIX} Mail check HTTP ${response.status}; staying in STATE_2.`);
+        await writeStatus(STATUS.ERROR, `HTTP ${response.status}`);
+        return makeResult(false, 'STATE_2', REASON.NETWORK_ERROR);
+      }
+    }
+
+    const finalUrl = response.url || "";
+    const contentType = (response.headers.get("content-type") || "").toLowerCase();
+    if (finalUrl.includes("_task=login") || contentType.includes("text/html")) {
+      return await exitLoggedOutFromListResponse(
+        `${LOG_PREFIX} Session expired (login URL or HTML content-type on mail list). Transitioning STATE_2 -> STATE_1.`
+      );
+    }
+
+    const rawText = await response.text();
     let listData;
     try {
-      const response = await fetch(listUrl, {
-        method: "GET",
-        credentials: "include",
-        cache: "no-store",
-        signal: controller.signal
-      });
-
-      if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          console.info(`${LOG_PREFIX} Session expired by HTTP ${response.status}. Transitioning STATE_2 -> STATE_1.`);
-          cachedRcToken = null;
-          await notifySessionExpired(playSound);
-          await clearAlarm(MAIL_CHECK_ALARM);
-          await ensureAuthCheckAlarm();
-        } else {
-          console.warn(`${LOG_PREFIX} Mail check HTTP ${response.status}; staying in STATE_2.`);
-        }
-        return;
+      listData = JSON.parse(rawText);
+    } catch (parseErr) {
+      if (looksLikeRoundcubeLogin(rawText)) {
+        return await exitLoggedOutFromListResponse(
+          `${LOG_PREFIX} Session expired (login HTML after failed JSON parse). Transitioning STATE_2 -> STATE_1.`
+        );
       }
-
-      listData = await response.json();
-    } finally {
-      clearTimeout(timeoutHandle);
+      console.warn(`${LOG_PREFIX} Mail list response is not valid JSON:`, parseErr);
+      await writeStatus(STATUS.ERROR, parseErr.message);
+      return makeResult(false, 'STATE_2', REASON.UNKNOWN_ERROR);
     }
 
-    const execStr = listData?.exec || "";
-    if (!execStr) {
-      if (looksLikeRoundcubeLogin(JSON.stringify(listData))) {
-        console.info(`${LOG_PREFIX} Session expired (login detected in list response). Transitioning STATE_2 -> STATE_1.`);
+    const execStr = listData?.exec ?? '';
+    const parsed = parseMailExecResponse(execStr);
+
+    if (!parsed.ok) {
+      if (parsed.sessionError) {
+        console.info(`${LOG_PREFIX} Session expired (session error in exec). Transitioning STATE_2 -> STATE_1.`);
         cachedRcToken = null;
+        if (isStale()) {
+          await writeStaleCheckStatus();
+          return makeResult(false, currentState, REASON.STALE_GENERATION);
+        }
         await notifySessionExpired(playSound);
-        await clearAlarm(MAIL_CHECK_ALARM);
-        await ensureAuthCheckAlarm();
+        await transitionToState('STATE_1', REASON.LOGIN_REQUIRED);
+        await writeStatus(STATUS.LOGGED_OUT);
+        return makeResult(false, 'STATE_1', REASON.LOGIN_REQUIRED);
       } else {
-        console.warn(`${LOG_PREFIX} Empty exec in list response; skipping.`);
+        if (looksLikeRoundcubeLogin(JSON.stringify(listData))) {
+          console.info(`${LOG_PREFIX} Session expired (login detected in list response). Transitioning STATE_2 -> STATE_1.`);
+          cachedRcToken = null;
+          if (isStale()) {
+            await writeStaleCheckStatus();
+            return makeResult(false, currentState, REASON.STALE_GENERATION);
+          }
+          await notifySessionExpired(playSound);
+          await transitionToState('STATE_1', REASON.LOGIN_REQUIRED);
+          await writeStatus(STATUS.LOGGED_OUT);
+          return makeResult(false, 'STATE_1', REASON.LOGIN_REQUIRED);
+        } else {
+          tokenUnavailableCount = 0;
+          console.warn(`${LOG_PREFIX} Empty exec in list response; skipping.`);
+          await writeStatus(STATUS.MONITORING);
+          return makeResult(true, 'STATE_2', REASON.NO_NEW_MAIL);
+        }
       }
-      return;
     }
 
-    if (execStr.includes("session_error") || execStr.includes("_task=login")) {
-      console.info(`${LOG_PREFIX} Session expired (session_error in exec). Transitioning STATE_2 -> STATE_1.`);
-      cachedRcToken = null;
-      await notifySessionExpired(playSound);
-      await clearAlarm(MAIL_CHECK_ALARM);
-      await ensureAuthCheckAlarm();
-      return;
-    }
+    tokenUnavailableCount = 0;
 
-    const uidMatches = [...execStr.matchAll(/add_message_row\((\d+),/g)];
-    const ids = uidMatches.map(m => Number(m[1])).filter(Number.isFinite).sort((a, b) => a - b);
+    const ids = parsed.uids.sort((a, b) => a - b);
     const highestId = ids.length > 0 ? ids[ids.length - 1] : null;
 
     if (highestId == null) {
       console.info(`${LOG_PREFIX} Valid response but inbox is empty; updating timestamp.`);
+      if (isStale()) {
+        await writeStaleCheckStatus();
+        return makeResult(false, currentState, REASON.STALE_GENERATION);
+      }
       await setStorage({ [STORAGE_KEYS.lastSuccessfulCheckTs]: Date.now() });
       if (isManual) {
         await showNotificationOverlay({
@@ -371,7 +774,8 @@ async function runMailCheck(isManual = false) {
           playSound
         });
       }
-      return;
+      await writeStatus(STATUS.MONITORING);
+      return makeResult(true, 'STATE_2', REASON.NO_NEW_MAIL);
     }
 
     let newCount = 0;
@@ -384,10 +788,18 @@ async function runMailCheck(isManual = false) {
 
     if (newCount > 0) {
       console.info(`${LOG_PREFIX} New mail detected: ${newCount} message(s).`);
+      if (isStale()) {
+        await writeStaleCheckStatus();
+        return makeResult(false, currentState, REASON.STALE_GENERATION);
+      }
       await notifyNewMail(newCount, playSound);
     } else {
       console.info(`${LOG_PREFIX} No new mail.`);
       if (isManual) {
+        if (isStale()) {
+          await writeStaleCheckStatus();
+          return makeResult(false, currentState, REASON.STALE_GENERATION);
+        }
         await showNotificationOverlay({
           title: "METU Mail Notifier",
           message: "",
@@ -397,63 +809,93 @@ async function runMailCheck(isManual = false) {
       }
     }
 
+    if (isStale()) {
+      await writeStaleCheckStatus();
+      return makeResult(false, currentState, REASON.STALE_GENERATION);
+    }
     await setStorage({
       [STORAGE_KEYS.lastSeenId]: nextLastSeen,
       [STORAGE_KEYS.lastSuccessfulCheckTs]: Date.now()
     });
     console.info(`${LOG_PREFIX} Updated lastSeenId to ${nextLastSeen}.`);
+    await writeStatus(STATUS.MONITORING);
+    return newCount > 0
+      ? makeResult(true, 'STATE_2', REASON.NEW_MAIL, newCount)
+      : makeResult(true, 'STATE_2', REASON.NO_NEW_MAIL);
   } catch (error) {
     console.error(`${LOG_PREFIX} Mail check failed safely:`, error);
+    await writeStatus(STATUS.ERROR, error.message);
+    return makeResult(false, 'STATE_2', REASON.UNKNOWN_ERROR);
   } finally {
     checkInProgress = false;
+    mailCheckController = null;
   }
-}
-
-async function initializeStateMachine() {
-  if (!(await isExtensionEnabled())) {
-    console.info(`${LOG_PREFIX} Extension disabled; clearing alarms.`);
-    await clearAlarm(MAIL_CHECK_ALARM);
-    await clearAlarm(AUTH_CHECK_ALARM);
-    return;
-  }
-  console.info(`${LOG_PREFIX} Initializing state machine in STATE_1.`);
-  await clearAlarm(MAIL_CHECK_ALARM);
-  await ensureAuthCheckAlarm();
 }
 
 async function stopStateMachine() {
   console.info(`${LOG_PREFIX} Stopping state machine (extension disabled).`);
-  await clearAlarm(AUTH_CHECK_ALARM);
-  await clearAlarm(MAIL_CHECK_ALARM);
+  await writeStatus(STATUS.PAUSED);
+  await transitionToState('STATE_1', REASON.EXTENSION_DISABLED);
   cachedRcToken = null;
+  tokenUnavailableCount = 0;
   checkInProgress = false;
+
+  currentGeneration++;
+
+  if (authCheckController) {
+    authCheckController.abort();
+    authCheckController = null;
+  }
+  if (mailCheckController) {
+    mailCheckController.abort();
+    mailCheckController = null;
+  }
 }
 
 // ── Manual Check via Message ──
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === "MANUAL_CHECK") {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'OPEN_INBOX') {
+    (async () => {
+      try {
+        await openOrFocusInbox(message.url);
+        sendResponse({ ok: true });
+      } catch (e) {
+        console.warn(`${LOG_PREFIX} OPEN_INBOX failed:`, e?.message || e);
+        sendResponse({ ok: false });
+      }
+    })();
+    return true;
+  }
+  if (message.type === 'MANUAL_CHECK') {
     console.info(`${LOG_PREFIX} Manual check triggered from popup.`);
     (async () => {
-      const mailAlarm = await new Promise(resolve => chrome.alarms.get(MAIL_CHECK_ALARM, resolve));
-      if (mailAlarm) {
-        await clearAlarm(MAIL_CHECK_ALARM);
-        await runMailCheck(true);
-      } else {
-        await clearAlarm(AUTH_CHECK_ALARM);
-        await runAuthCheck(true);
+      const stateBefore = currentState;
+      try {
+        let result;
+        if (currentState === 'STATE_2') {
+          result = await runMailCheck(true);
+        } else {
+          result = await runAuthCheck(true);
+        }
+        if (
+          isValidCheckResult(result) &&
+          result.reason !== REASON.STALE_GENERATION &&
+          result.state !== stateBefore
+        ) {
+          await transitionToState(result.state, result.reason);
+        }
+        sendResponse(
+          isValidCheckResult(result)
+            ? result
+            : makeResult(false, currentState, REASON.UNKNOWN_ERROR)
+        );
+      } catch (error) {
+        console.error(`${LOG_PREFIX} Manual check failed:`, error);
+        sendResponse(makeResult(false, currentState, REASON.UNKNOWN_ERROR));
       }
-      // Re-ensure the correct alarm based on the state after the check
-      // (the check itself may have transitioned states)
-      const authAlarmAfter = await new Promise(resolve => chrome.alarms.get(AUTH_CHECK_ALARM, resolve));
-      if (authAlarmAfter) {
-        await ensureAuthCheckAlarm();
-      } else {
-        await ensureMailCheckAlarm();
-      }
-      sendResponse({ ok: true });
     })();
-    return true; // Keep message channel open for async response
+    return true;
   }
 });
 
@@ -461,14 +903,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 chrome.runtime.onInstalled.addListener(async () => {
   console.info(`${LOG_PREFIX} onInstalled fired.`);
-  await setStorage({ [STORAGE_KEYS.hasWarnedLogin]: false });
-  await initializeStateMachine();
+  const existingFlags = await getStorage([STORAGE_KEYS.hasWarnedLogin]);
+  if (existingFlags[STORAGE_KEYS.hasWarnedLogin] === undefined) {
+    await setStorage({ [STORAGE_KEYS.hasWarnedLogin]: false });
+  }
+  await reconcileRuntimeState();
   if (await isExtensionEnabled()) await runAuthCheck();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   console.info(`${LOG_PREFIX} onStartup fired.`);
-  await initializeStateMachine();
+  await reconcileRuntimeState();
   if (await isExtensionEnabled()) await runAuthCheck();
 });
 
@@ -485,15 +930,22 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
+chrome.notifications.onClicked.addListener((notificationId) => {
+  if (notificationId === MAIL_NOTIFICATION_ID || notificationId === LOGIN_NOTIFICATION_ID) {
+    chrome.tabs.create({ url: INBOX_URL });
+    chrome.notifications.clear(notificationId);
+  }
+});
+
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !(STORAGE_KEYS.extensionEnabled in changes)) return;
   if (changes[STORAGE_KEYS.extensionEnabled].newValue === false) {
     stopStateMachine();
   } else {
-    initializeStateMachine().then(() => runAuthCheck());
+    reconcileRuntimeState().then(() => runAuthCheck());
   }
 });
 
-initializeStateMachine().catch((error) => {
-  console.error(`${LOG_PREFIX} Failed to initialize state machine:`, error);
+reconcileRuntimeState().catch((error) => {
+  console.error(`${LOG_PREFIX} Failed to reconcile runtime state:`, error);
 });

@@ -1,9 +1,9 @@
 # Privacy Policy — METU Mail Notifier
 
 **Extension Name:** METU Mail Notifier
-**Version:** 1.3.1
+**Version:** 1.4.0
 **Platform:** Google Chrome / Microsoft Edge (Manifest V3) — manual install
-**Last Updated:** April 11, 2026
+**Last Updated:** April 12, 2026
 
 ---
 
@@ -29,7 +29,10 @@ The following table describes every piece of information the extension interacts
 | Notification sound toggle state | You, via the popup | Controls whether a chime plays when a notification appears | **No** |
 | `lastSeenId` (highest IMAP UID seen) | Computed from the webmail inbox response | Tracks which messages have already been notified so duplicates are not shown | **No** — stored only in `chrome.storage.local` |
 | `lastSuccessfulCheckTs` (timestamp) | Written after each successful mail check | Records when the last check completed; displayed in the popup UI | **No** — stored only in `chrome.storage.local` |
-| `hasWarnedLogin` (boolean) | Written when the "please log in" notification has been shown | Prevents showing the login warning repeatedly | **No** — stored only in `chrome.storage.local` |
+| `hasWarnedLogin` (boolean) | Written for migration compatibility; kept in sync with `lastLoginWarningTs` | Legacy flag retained so older installs remain consistent with the throttled login-reminder logic | **No** — stored only in `chrome.storage.local` |
+| `lastLoginWarningTs` (timestamp) | Written when a login reminder is shown | Throttles repeated "please log in" notifications (minimum interval between reminders) | **No** — stored only in `chrome.storage.local` |
+| `extensionStatus` (object: label, detail, timestamp) | Written after each check cycle | Supplies the current status label and detail text shown in the popup UI | **No** — stored only in `chrome.storage.local` |
+| `machineState` (`STATE_1` or `STATE_2`) | Written on state transitions | Persists the state-machine phase so the worker can resume correctly after sleep | **No** — stored only in `chrome.storage.local` |
 | Roundcube `_token` value | Extracted from the webmail inbox HTML page | Required as a CSRF parameter in the mail-list API request | **No** — held only in service-worker memory; discarded when the service worker is recycled |
 | Webmail inbox HTML response | Fetched from `webmail.metu.edu.tr` | Parsed locally to detect login state and extract the session token | **No** — read-only, never stored or transmitted beyond the extension |
 | Webmail mail-list JSON response | Fetched from `webmail.metu.edu.tr` | Parsed locally to count message IDs and detect session expiry | **No** — read-only, never stored or transmitted beyond the extension |
@@ -59,7 +62,13 @@ METU Mail Notifier uses only **`chrome.storage.local`** — all data stays entir
 
 4. **`lastSuccessfulCheckTs`** — a Unix timestamp (ms) written after each successful mail-list response. Displayed in the popup UI to let you know when the extension last checked for new mail.
 
-5. **`hasWarnedLogin`** — a boolean that becomes `true` after the "please log in" one-time notification has been shown, preventing repeated alerts while you are logged out.
+5. **`hasWarnedLogin`** — a boolean kept for migration compatibility and updated in sync with **`lastLoginWarningTs`** so older installs align with the current login-reminder behaviour; it is not the sole gate for showing login reminders.
+
+6. **`lastLoginWarningTs`** — a Unix timestamp (ms) recording when the last "please log in" reminder was shown. Used to throttle how often that reminder may appear while you are logged out.
+
+7. **`extensionStatus`** — a small object (`label`, optional `detail`, `ts`) written after checks complete so the popup can display the current status text without recomputing it from scratch.
+
+8. **`machineState`** — either `STATE_1` or `STATE_2`, persisted whenever the check loop transitions between the logged-out and logged-in phases so the service worker can reconcile alarms after being suspended.
 
 ---
 
@@ -85,7 +94,7 @@ The following permissions are declared in `manifest.json`. Each one is required 
 
 ### `storage`
 
-**Why it is needed:** Required to read and write the five local storage keys described in Section 3 (`extensionEnabled`, `playNotificationSound`, `lastSeenId`, `lastSuccessfulCheckTs`, `hasWarnedLogin`) via `chrome.storage.local`.
+**Why it is needed:** Required to read and write the local storage keys described in Section 3 (`extensionEnabled`, `playNotificationSound`, `lastSeenId`, `lastSuccessfulCheckTs`, `hasWarnedLogin`, `lastLoginWarningTs`, `extensionStatus`, `machineState`) via `chrome.storage.local`.
 
 ### `scripting`
 
@@ -105,7 +114,7 @@ The following permissions are declared in `manifest.json`. Each one is required 
 
 ### `host_permissions: <all_urls>`
 
-**Why it is needed:** Required to inject the notification content script into whichever tab the user is currently viewing, regardless of what website they are on. The content script only creates a toast overlay and plays a sound — it does not read, transmit, or interact with the host page's content in any way.
+**Why it is needed:** This pattern is listed under **`optional_host_permissions`** in `manifest.json`, so it is **not** granted automatically at install. The browser only activates it if you explicitly approve it (for example via the in-extension control that enables in-page overlays). Once granted, it allows injecting the notification content script into whichever tab you are currently viewing, regardless of what website you are on. The content script only creates a toast overlay and plays a sound — it does not read, transmit, or interact with the host page's content in any way.
 
 ---
 
@@ -125,7 +134,7 @@ METU Mail Notifier does not share, sell, rent, trade, or otherwise disclose any 
 
 ## 8. Data Security
 
-Because METU Mail Notifier stores only five small preference/state values locally on your device and transmits nothing externally, the security surface area is minimal by design. All data is stored using the browser's native, sandboxed `chrome.storage.local` API and is protected by the browser's own security model and your OS user account. The storage is not accessible to web pages or other extensions.
+Because METU Mail Notifier stores only a small set of preference/state values locally on your device and transmits nothing externally, the security surface area is minimal by design. All data is stored using the browser's native, sandboxed `chrome.storage.local` API and is protected by the browser's own security model and your OS user account. The storage is not accessible to web pages or other extensions.
 
 The Roundcube CSRF token is held only in service-worker memory and is never written to disk. It is discarded automatically when the service worker is recycled by the browser.
 
@@ -149,7 +158,7 @@ If you are located in the European Economic Area (EEA), the United Kingdom, or a
 
 To remove all data stored by the extension:
 
-1. Open the browser's DevTools on any page, open the **Application** tab, navigate to **Extension Storage → Local**, and delete any of the keys (`extensionEnabled`, `playNotificationSound`, `lastSeenId`, `lastSuccessfulCheckTs`, `hasWarnedLogin`), or
+1. Open the browser's DevTools on any page, open the **Application** tab, navigate to **Extension Storage → Local**, and delete any of the keys (`extensionEnabled`, `playNotificationSound`, `lastSeenId`, `lastSuccessfulCheckTs`, `hasWarnedLogin`, `lastLoginWarningTs`, `extensionStatus`, `machineState`), or
 2. Uninstall METU Mail Notifier — this will remove all locally stored state.
 
 ---
