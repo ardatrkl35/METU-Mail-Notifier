@@ -4,6 +4,8 @@ const KEYS = {
   lastSuccessfulCheckTs: "lastSuccessfulCheckTs"
 };
 
+const REPO_URL = "https://github.com/ardatrkl35/METU-Mail-Notifier";
+
 const STATUS_CHECKING_LABEL = 'Checking...';
 
 const REASON_TEXT = {
@@ -18,10 +20,14 @@ const REASON_TEXT = {
 
 const masterToggle = document.getElementById("masterToggle");
 const soundToggle = document.getElementById("soundToggle");
+const mainContent = document.getElementById("mainContent");
+const popupFooter = document.getElementById("popupFooter");
 const disabledOverlay = document.getElementById("disabledOverlay");
 const statusNode = document.getElementById("status");
 const lastCheckTimeNode = document.getElementById("lastCheckTime");
 const manualCheckBtn = document.getElementById("manualCheckBtn");
+const repoLinkBtn = document.getElementById("repoLinkBtn");
+const extensionVersionNode = document.getElementById("extensionVersion");
 
 function readStorage(keys) {
   return new Promise((resolve, reject) => {
@@ -59,6 +65,9 @@ function showToast(message, isError = false) {
 
 function applyMasterState(enabled) {
   disabledOverlay.classList.toggle("visible", !enabled);
+  const blockSubtree = !enabled;
+  if (mainContent) mainContent.inert = blockSubtree;
+  if (popupFooter) popupFooter.inert = blockSubtree;
 }
 
 function formatTime(ts) {
@@ -86,7 +95,23 @@ function updateStatusUI(status) {
   }
 }
 
+function setupRepoFooter() {
+  if (extensionVersionNode) {
+    try {
+      extensionVersionNode.textContent = chrome.runtime.getManifest().version;
+    } catch (_) {
+      extensionVersionNode.textContent = "";
+    }
+  }
+  if (repoLinkBtn) {
+    repoLinkBtn.addEventListener("click", () => {
+      chrome.tabs.create({ url: REPO_URL });
+    });
+  }
+}
+
 async function initialize() {
+  setupRepoFooter();
   try {
     const stored = await readStorage([KEYS.extensionEnabled, KEYS.playNotificationSound, KEYS.lastSuccessfulCheckTs]);
     const enabled = stored[KEYS.extensionEnabled] !== false;

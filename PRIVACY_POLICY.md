@@ -1,9 +1,9 @@
 # Privacy Policy — METU Mail Notifier
 
 **Extension Name:** METU Mail Notifier
-**Version:** 1.4.0
+**Version:** 1.4.1
 **Platform:** Google Chrome / Microsoft Edge (Manifest V3) — manual install
-**Last Updated:** April 12, 2026
+**Last Updated:** April 13, 2026
 
 ---
 
@@ -102,7 +102,7 @@ The following permissions are declared in `manifest.json`. Each one is required 
 
 ### `tabs`
 
-**Why it is needed:** Used by the background service worker to query the currently active tab (`chrome.tabs.query`) so the notification overlay can be injected into it via `chrome.scripting.executeScript`.
+**Why it is needed:** Used by the background service worker to query the currently active tab (`chrome.tabs.query`) so the notification overlay can be injected into it via `chrome.scripting.executeScript`. Also used to open a new browser tab when you choose the popup footer link to the public GitHub repository (`chrome.tabs.create`) — the same as opening any normal HTTPS URL; the extension does not log or transmit anything about that action.
 
 ### `notifications`
 
@@ -120,9 +120,11 @@ The following permissions are declared in `manifest.json`. Each one is required 
 
 ## 6. Third-Party Services & External Requests
 
-METU Mail Notifier makes **no requests to any external server, API, or third-party service.**
+METU Mail Notifier makes **no automated requests to any external server, API, or third-party service** for extension functionality.
 
-All network activity is limited to `webmail.metu.edu.tr` as described in Section 4. No analytics SDKs, tracking pixels, advertising networks, or remote logging services of any kind are included in or used by this extension.
+All **automatic** network activity is limited to `webmail.metu.edu.tr` as described in Section 4. No analytics SDKs, tracking pixels, advertising networks, or remote logging services of any kind are included in or used by this extension.
+
+If you **voluntarily** open the project's GitHub page from the popup footer, your browser loads that site under its own terms — the extension only issues a standard tab open to the public repository URL; it does not embed GitHub, fingerprint you, or record that you clicked.
 
 ---
 

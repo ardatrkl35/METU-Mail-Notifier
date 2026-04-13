@@ -391,6 +391,43 @@ input:focus-visible,
   outline-offset: 2px;
 }
 
+/* ── Footer (repo link) ────────────────────────────────────────────── */
+.popup-footer {
+  flex-shrink: 0;
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--border-subtle);
+  text-align: center;
+}
+
+.popup-footer__repo {
+  display: block;
+  width: 100%;
+  margin: 0 auto;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.33;
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.popup-footer__repo:hover {
+  color: var(--body-gray);
+}
+
+.popup-footer__meta {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.33;
+  color: var(--text-muted);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

@@ -6,6 +6,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.4.1] — 2026-04-13
+
+### Fixed
+
+- **Service-worker race on cold wake** — added a read-only state fetch path so
+  `reconcileRuntimeState` cannot overlap with itself when the worker wakes
+  repeatedly; prevents duplicate reconciliation loops and keeps MV3 alarm alignment
+  stable after suspension.
+- **Toast layout vs. host CSS** — tightened Shadow DOM styling and isolation so
+  strong or global rules on the host page cannot distort the in-page notification
+  layout.
+- **Web Audio autoplay timing** — notification audio now awaits
+  `AudioContext.resume()` where needed and catches `NotAllowedError` so autoplay
+  policy races no longer leave playback in a broken state.
+
+### Added
+
+- **GitHub link in popup footer** — footer control shows the installed version and
+  opens the public repository in a new tab via `chrome.tabs.create` (no embedded
+  content, no click tracking).
+
+### Changed
+
+- **Accessibility when paused** — the settings block and footer use the `inert`
+  attribute while the extension is disabled so keyboard focus cannot escape into
+  controls underneath the paused overlay; the header master toggle remains active.
+
+---
+
 ## [1.4.0] — 2026-04-12
 
 ### Fixed

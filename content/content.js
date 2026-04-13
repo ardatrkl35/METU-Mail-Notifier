@@ -48,7 +48,21 @@
 
     const style = document.createElement("style");
     style.textContent = `
+      :host {
+        all: initial;
+        display: block;
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        border: none;
+        z-index: 2147483647;
+        pointer-events: none;
+      }
       .mm-toast {
+        pointer-events: auto;
         position: fixed; bottom: 20px; right: 20px;
         background: #ffffff; color: #e31837;
         border: 1px solid #e31837; border-radius: 8px;
@@ -182,21 +196,30 @@
     });
     sr.getElementById("mmDismissBtn").addEventListener("click", dismiss);
 
-    if (playSound) playDing(kind);
+    if (playSound) {
+      void playDing(kind);
+    }
 
     setTimeout(dismiss, countdownSeconds * 1000);
   }
 
-  function playDing(kind) {
+  async function playDing(kind) {
     try {
       if (!audioContext || audioContext.state === "closed") {
         audioContext = new AudioContext();
       }
       if (audioContext.state === "suspended") {
-        audioContext.resume();
+        await audioContext.resume().catch((e) => {
+          if (e && e.name === "NotAllowedError") {
+            /* autoplay policy — toast-only UX */
+          }
+        });
       }
-      audioReady = audioContext.state === "running";
-      if (!audioReady || !audioContext || audioContext.state !== "running") return;
+      if (!audioContext || audioContext.state !== "running") {
+        audioReady = false;
+        return;
+      }
+      audioReady = true;
       const ctx = audioContext;
       const now = ctx.currentTime;
       if (kind === "newMail" || kind === "noNewMail") {
@@ -207,7 +230,7 @@
         tone(ctx, 261.63, now + 0.25, 0.3, 0.25, "triangle");
       }
     } catch (_) {
-      /* audio unavailable */
+      audioReady = false;
     }
   }
 

@@ -2,7 +2,7 @@
 
 > Quietly checks your METU Roundcube inbox and shows an in-page notification the moment new email arrives — no tab switching required.
 
-![Version](https://img.shields.io/badge/version-1.4.0-blue)
+![Version](https://img.shields.io/badge/version-1.4.1-blue)
 ![Manifest](https://img.shields.io/badge/manifest-v3-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Edge_%2F_Chrome-0078D4)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
@@ -28,12 +28,15 @@ METU Mail Notifier runs a two-state check loop in the background:
 - **In-page toast notifications** — a styled overlay appears in the corner of whatever page you are viewing; no new windows, no OS popups by default
 - **Two notification sounds** — ascending chime for new mail, descending tone for login/session warnings (Web Audio API, no audio files needed)
 - **Sound toggle** — enable or disable notification sounds from the popup
-- **Master enable/disable toggle** — pause the entire extension with one click; the check loop stops and resumes instantly
+- **Master enable/disable toggle** — pause the entire extension with one click; the check loop stops and resumes instantly; when paused, `inert` locks keyboard focus out of the covered region so the overlay state is accessible and predictable
 - **Manual check** — instantly check for new mail at the click of a button in the popup, with visual feedback
 - **Last checked time** — displays the exact time of the last successful background check in the popup
 - **Session expiry detection** — detects logout via URL redirect, login-page HTML markers, and Roundcube's `session_error` exec response
 - **Graceful fallback** — if no injectable tab is available, new-mail notifications fall back to a native OS notification; login/session warnings silently retry on the next alarm cycle instead (they are not actionable from an OS popup)
-- **Shadow DOM isolation** — the in-page toast is rendered inside a Shadow Root so it never conflicts with the host page's CSS
+- **Shadow DOM isolation** — the in-page toast lives in a Shadow Root with hardened encapsulation so host-page CSS cannot break layout or chrome
+- **MV3 background stability** — service-worker cold wake reconciles persisted `machineState` through a read-only fetch path so reconciliation never stacks or fights itself
+- **Resilient notification audio** — Web Audio playback cooperates with browser autoplay rules (`resume()` + safe handling of `NotAllowedError`)
+- **Repository shortcut** — popup footer shows the installed version and opens the public GitHub project in a new tab (ordinary navigation; no analytics)
 - **Auto-dismiss** — toasts dismiss automatically after 30 seconds with an animated countdown bar
 - **Zero data collection** — nothing leaves your device, ever
 
@@ -91,7 +94,7 @@ METU Mail Notifier runs a two-state check loop in the background:
 
 ### Step by Step
 
-1. On install or browser startup, `reconcileRuntimeState` reads persisted `machineState` and aligns alarms; `transitionToState` applies phase changes when moving between STATE_1 and STATE_2 (including after worker wake).
+1. On install or browser startup, `reconcileRuntimeState` performs a read-only pull of persisted `machineState` and aligns alarms without overlapping loops; `transitionToState` applies phase changes when moving between STATE_1 and STATE_2 (including after worker wake).
 2. `runAuthCheck` fetches the inbox page with `credentials: "include"`. If the response contains login-page markers (`_task=login`, `name="_user"`, etc. — checked across the **full** body), the session is invalid.
 3. Once a valid session is detected, the CSRF token is extracted from the inbox HTML, `auth_check` is replaced by a `mail_check` alarm (fires every 5 minutes), and the state machine moves to STATE_2.
 4. `runMailCheck` calls the Roundcube mail-list API. The `exec` field of the JSON response is checked for `session_error` (session expired) before looking for `add_message_row(UID, ...)` entries.
@@ -232,4 +235,4 @@ This project is licensed under the **MIT License** — see the [LICENSE](./LICEN
 
 ---
 
-*METU Mail Notifier v1.4.0 · MV3 · Chrome / Edge · April 12, 2026*
+*METU Mail Notifier v1.4.1 · MV3 · Chrome / Edge · April 13, 2026*

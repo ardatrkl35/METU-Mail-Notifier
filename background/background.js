@@ -135,6 +135,15 @@ function getStorage(keys) {
   });
 }
 
+/**
+ * Read-only: canonical machine state from storage. Does not update currentState,
+ * currentGeneration, or alarms (unlike reconcileRuntimeState).
+ */
+async function getPersistedMachineState() {
+  const stored = await getStorage([STORAGE_KEYS.machineState]);
+  return stored[STORAGE_KEYS.machineState] === 'STATE_2' ? 'STATE_2' : 'STATE_1';
+}
+
 function setStorage(values) {
   return new Promise((resolve, reject) => {
     chrome.storage.local.set(values, () => {
@@ -870,10 +879,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'MANUAL_CHECK') {
     console.info(`${LOG_PREFIX} Manual check triggered from popup.`);
     (async () => {
-      const stateBefore = currentState;
       try {
+        const persistedState = await getPersistedMachineState();
+        const stateBefore = persistedState;
+        currentState = persistedState;
+
         let result;
-        if (currentState === 'STATE_2') {
+        if (persistedState === 'STATE_2') {
           result = await runMailCheck(true);
         } else {
           result = await runAuthCheck(true);
