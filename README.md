@@ -1,8 +1,8 @@
 # ✉️ METU Mail Notifier
 
-> Quietly checks your METU Roundcube inbox and shows an in-page notification the moment new email arrives — no tab switching required.
+> Quietly checks your METU Roundcube inbox and uses your browser’s **native notifications** when new mail arrives or when you need to sign in again. An optional in-page banner can appear on your active tab if you explicitly grant **access to all websites** — OS notifications always still fire.
 
-![Version](https://img.shields.io/badge/version-1.4.1-blue)
+![Version](https://img.shields.io/badge/version-1.5.0-blue)
 ![Manifest](https://img.shields.io/badge/manifest-v3-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Edge_%2F_Chrome-0078D4)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
@@ -18,27 +18,26 @@ METU Mail Notifier runs a two-state check loop in the background:
 
 | State | What happens |
 |---|---|
-| **STATE_1 — Logged out** | Probes the webmail inbox page every minute. When a valid session is detected, transitions to STATE_2. If no session exists, may show a "please log in" toast, throttled to at most once every 30 minutes. |
-| **STATE_2 — Logged in** | Calls the Roundcube mail-list API every 5 minutes. Compares message UIDs to detect new mail and shows a notification. Detects session expiry and transitions back to STATE_1. |
+| **STATE_1 — Logged out** | Probes the webmail inbox page every minute. When a valid session is detected, transitions to STATE_2. If no session exists, may show a “please log in” **OS notification**, throttled to at most once every 30 minutes. |
+| **STATE_2 — Logged in** | Calls the Roundcube mail-list API every 5 minutes. Compares message UIDs to detect new mail and shows **OS notifications**. Updates a toolbar **badge** with INBOX unread count (integer only). Detects session expiry and transitions back to STATE_1. |
 
 ---
 
 ## Features
 
-- **In-page toast notifications** — a styled overlay appears in the corner of whatever page you are viewing; no new windows, no OS popups by default
-- **Two notification sounds** — ascending chime for new mail, descending tone for login/session warnings (Web Audio API, no audio files needed)
-- **Sound toggle** — enable or disable notification sounds from the popup
-- **Master enable/disable toggle** — pause the entire extension with one click; the check loop stops and resumes instantly; when paused, `inert` locks keyboard focus out of the covered region so the overlay state is accessible and predictable
-- **Manual check** — instantly check for new mail at the click of a button in the popup, with visual feedback
-- **Last checked time** — displays the exact time of the last successful background check in the popup
-- **Session expiry detection** — detects logout via URL redirect, login-page HTML markers, and Roundcube's `session_error` exec response
-- **Graceful fallback** — if no injectable tab is available, new-mail notifications fall back to a native OS notification; login/session warnings silently retry on the next alarm cycle instead (they are not actionable from an OS popup)
-- **Shadow DOM isolation** — the in-page toast lives in a Shadow Root with hardened encapsulation so host-page CSS cannot break layout or chrome
-- **MV3 background stability** — service-worker cold wake reconciles persisted `machineState` through a read-only fetch path so reconciliation never stacks or fights itself
-- **Resilient notification audio** — Web Audio playback cooperates with browser autoplay rules (`resume()` + safe handling of `NotAllowedError`)
-- **Repository shortcut** — popup footer shows the installed version and opens the public GitHub project in a new tab (ordinary navigation; no analytics)
-- **Auto-dismiss** — toasts dismiss automatically after 30 seconds with an animated countdown bar
-- **Zero data collection** — nothing leaves your device, ever
+- **Native notifications** — new mail, login reminders, session expiry, and manual “no new mail” use `chrome.notifications` (OS-level popups); clicking a notification opens METU webmail where supported  
+- **Optional in-page toast (Path B)** — if you grant the optional **all websites** permission from the popup, a short banner can appear on your **active** tab in addition to native notifications; nothing replaces the OS notification, and you can revoke the permission anytime  
+- **Sound toggle** — when enabled, short chimes play in a hidden extension **offscreen** page for selected OS notifications (see in-product copy for which events include sound); no audio in arbitrary website tabs  
+- **Unread in the popup** — shows the same persisted INBOX unread total as the badge while monitoring (no subjects or senders)  
+- **Recent activity** — short capped list of non-identifying check outcomes in the popup  
+- **Master enable/disable toggle** — pause the entire extension with one click; the check loop stops and resumes instantly; when paused, `inert` locks keyboard focus out of the covered region so the paused state is accessible and predictable  
+- **Manual check** — instantly check for new mail from the popup, with visual feedback  
+- **Last checked time** — displays the time of the last successful background check  
+- **Open Inbox** — opens or focuses an existing METU webmail tab from the popup  
+- **Session expiry detection** — detects logout via URL redirect, login-page HTML markers, and Roundcube’s `session_error` exec response  
+- **MV3 background stability** — ES module service worker; cold wake reconciles persisted `machineState` through a read-only path so reconciliation does not stack or fight itself  
+- **Repository shortcut** — popup footer shows the installed version and opens the public GitHub project in a new tab (ordinary navigation; no analytics)  
+- **Zero remote data collection** — nothing is sent to servers operated by this extension  
 
 ---
 
@@ -46,9 +45,12 @@ METU Mail Notifier runs a two-state check loop in the background:
 
 | Setting | What it does | Storage |
 |---|---|---|
-| **Extension Enabled** (header toggle) | Master switch — when off, all alarms are cleared and checking stops | `chrome.storage.local` |
-| **Notification Sound** | Play a chime when a notification toast appears | `chrome.storage.local` |
-| **Last checked** & **Refresh icon** | Displays the timestamp of the last successful check; clicking the icon checks for mail immediately | `chrome.storage.local` |
+| **Extension Enabled** (header toggle) | Master switch — when off, alarms are cleared and checking stops | `chrome.storage.local` |
+| **Notification Sound** | Optional chimes for selected OS notifications | `chrome.storage.local` |
+| **Unread Messages** | Read-only display of persisted INBOX unread count | Written by background after successful checks |
+| **Recent activity** | Short list of non-identifying outcomes | `chrome.storage.local` (`popupActivityLog`) |
+| **In-page toast (optional)** | Grant or revoke optional `<all_urls>` for additive on-page banner | Browser permission model (not stored as a custom flag beyond what Chrome exposes) |
+| **Last checked** & **refresh** | Timestamp of last successful check; manual check button | `chrome.storage.local` |
 
 ---
 
@@ -62,62 +64,31 @@ METU Mail Notifier runs a two-state check loop in the background:
         │ storage.onChanged                    │ get()
         ▼                                      ▼
  ┌──────────────────┐              ┌──────────────────────────┐
- │ Service Worker   │              │     background.js        │
+ │ Service Worker   │              │  background/*.js (ESM)   │
  │ background.js    │              │                          │
- │                  │              │  1. reconcileRuntimeState │
- │  chrome.alarms   │              │     transitionToState()   │
- │  auth_check (1m) │              │     (persist + alarms)    │
- │  mail_check (5m) │              │                          │
- └──────┬───────────┘              │  2. runAuthCheck()        │
-        │ alarm fired              │     probeInboxPage()      │
-        ▼                          │     → detect login page   │
- ┌──────────────────────────────┐  │     → extract RC token    │
- │ STATE_1: auth_check alarm    │  │     transition → STATE_2  │
- │   probeSessionInvalid()      │  │                          │
- │   if invalid → notify login  │  │  3. runMailCheck()        │
- │   if valid   → STATE_2       │  │     fetch mail-list API   │
- └──────────────────────────────┘  │     compare UIDs          │
-                                   │     → notify new mail     │
- ┌──────────────────────────────┐  │     detect session_error  │
- │ STATE_2: mail_check alarm    │  │     → transition STATE_1  │
- │   fetchMailList()            │  └──────────────────────────┘
- │   compareUIDs()              │
- │   if new mail → notify       │  ┌──────────────────────────┐
- │   if session_error → STATE_1 │  │     content.js           │
- └──────────────────────────────┘  │  (injected on demand)    │
-                                   │                          │
-                                   │  Shadow DOM toast overlay │
-                                   │  Web Audio chime          │
-                                   │  Open Inbox / Dismiss     │
-                                   └──────────────────────────┘
+ │  (type: module)  │              │  reconcileRuntimeState   │
+ │                  │              │  transitionToState()     │
+ │  chrome.alarms   │              │  runAuthCheck /          │
+ │  auth_check (1m) │              │  runMailCheck, …         │
+ │  mail_check (5m) │              └──────────────────────────┘
+ └──────┬───────────┘
+        │
+        ├────────► chrome.notifications (default alerts)
+        ├────────► chrome.action.setBadgeText (unread)
+        ├────────► optional: scripting + tabs → overlay on active tab
+        └────────► optional: offscreen → notification chimes
 ```
 
 ### Step by Step
 
-1. On install or browser startup, `reconcileRuntimeState` performs a read-only pull of persisted `machineState` and aligns alarms without overlapping loops; `transitionToState` applies phase changes when moving between STATE_1 and STATE_2 (including after worker wake).
-2. `runAuthCheck` fetches the inbox page with `credentials: "include"`. If the response contains login-page markers (`_task=login`, `name="_user"`, etc. — checked across the **full** body), the session is invalid.
-3. Once a valid session is detected, the CSRF token is extracted from the inbox HTML, `auth_check` is replaced by a `mail_check` alarm (fires every 5 minutes), and the state machine moves to STATE_2.
-4. `runMailCheck` calls the Roundcube mail-list API. The `exec` field of the JSON response is checked for `session_error` (session expired) before looking for `add_message_row(UID, ...)` entries.
-5. New message UIDs are compared to `lastSeenId` in storage. If any UID is higher, a notification is shown and `lastSeenId` is updated.
-6. Notifications are delivered by injecting `content.js` into the active tab via `chrome.scripting.executeScript`, then sending a message. If no injectable tab exists, new-mail alerts fall back to `chrome.notifications` (OS popup); login/session warnings instead return `false` so `hasWarnedLogin` is not marked as sent and the next alarm cycle retries delivery.
-7. The master toggle and sound preference are written to `chrome.storage.local`. A `storage.onChanged` listener in the service worker starts or stops the state machine instantly when `extensionEnabled` changes.
-
----
-
-## Notification Toasts
-
-Toasts appear in the **bottom-right corner** of the page you are currently viewing.
-
-| Kind | Accent colour | Sound |
-|---|---|---|
-| New mail | Green (`#2e7d32`) | Ascending two-note chime (C5 → E5, sine) |
-| No new mail (manual check) | Red (`#e31837`) | Ascending two-note chime (C5 → E5, sine) |
-| Session expired / not logged in | Red (`#c62828`) | Descending two-note tone (E4 → C4, triangle) |
-
-- Auto-dismisses after **30 seconds** with a countdown progress bar.
-- **Open Inbox** — focuses an existing METU webmail tab if one is already open, or opens `webmail.metu.edu.tr` in a new tab.
-- **Dismiss** — removes the toast immediately.
-- Rendered in a **Shadow Root** — completely isolated from the host page's styles.
+1. On install or browser startup, the worker reconciles persisted `machineState` and aligns alarms without overlapping reconciliation loops.  
+2. `runAuthCheck` may use `chrome.cookies.getAll` scoped to `webmail.metu.edu.tr` as a lightweight gate, then fetches the inbox page with `credentials: "include"`. Login-page markers are checked across the **full** HTML body where applicable.  
+3. Once a valid session is detected, the CSRF token is extracted from the inbox HTML, the `mail_check` alarm is scheduled (every 5 minutes), and the state machine moves to STATE_2.  
+4. `runMailCheck` calls the Roundcube mail-list API. The response is validated for session errors and login HTML **before** assuming JSON inbox data is trustworthy.  
+5. New message UIDs are compared to `lastSeenId` in storage. Unread count and badge text are updated from list parsing — **no** email subjects or senders are read.  
+6. **Notifications** are created with `chrome.notifications`. If optional `<all_urls>` is granted, the extension may inject its own `content` scripts into the active tab to show an additive banner; injection is limited to the extension’s bundled files.  
+7. Optional chimes are requested through a hidden **offscreen** document (`offscreen/sound.html`) so playback stays in extension context under MV3.  
+8. The master toggle and sound preference are written to `chrome.storage.local`. A `storage.onChanged` listener starts or stops the state machine when `extensionEnabled` changes.  
 
 ---
 
@@ -128,7 +99,7 @@ Toasts appear in the **bottom-right corner** of the page you are currently viewi
    git clone https://github.com/ardatrkl35/METU-Mail-Notifier.git
    ```
 
-2. Open **Chrome** and navigate to `chrome://extensions/`
+2. Open **Chrome** and navigate to `chrome://extensions/`  
    *(For Edge, navigate to `edge://extensions/`)*
 
 3. Enable **Developer Mode** using the toggle in the top-right corner.
@@ -137,18 +108,19 @@ Toasts appear in the **bottom-right corner** of the page you are currently viewi
 
 5. The ✉️ icon will appear in your toolbar. Click it to configure settings.
 
-6. **Log in** to [webmail.metu.edu.tr](https://webmail.metu.edu.tr) in the same browser profile. The extension will detect your session within one minute.
+6. **Log in** to [webmail.metu.edu.tr](https://webmail.metu.edu.tr) in the same browser profile. The extension will detect your session within about a minute.
 
 ---
 
 ## Usage
 
-1. Click the **METU Mail** icon in your browser toolbar.
-2. Use the **Extension Enabled** toggle in the header to pause or resume checking.
-3. Toggle **Notification Sound** to enable or disable the audio chime.
-4. Keep a browser window open — the service worker needs the browser running to fire alarms.
+1. Click the **METU Mail** icon in your browser toolbar.  
+2. Use the **Extension Enabled** toggle in the header to pause or resume checking.  
+3. Toggle **Notification Sound** if you want optional chimes for selected OS notifications.  
+4. Optionally use **Grant access to all websites** only if you want the additive in-page toast; you can revoke it later in the browser’s extension settings.  
+5. Keep a browser window open — the service worker needs the browser running to fire alarms.
 
-> **Tip:** The extension only needs one browser window open anywhere. It does not require the webmail tab to be open.
+> **Tip:** The extension does not require the webmail tab to stay open. It uses your existing browser session for `webmail.metu.edu.tr`.
 
 ---
 
@@ -156,36 +128,39 @@ Toasts appear in the **bottom-right corner** of the page you are currently viewi
 
 ```
 METU-Mail-Notifier/
-├── manifest.json              # Extension manifest (MV3)
-├── .gitignore
+├── manifest.json              # Extension manifest (MV3, ES module worker)
 ├── LICENSE
-├── README.md                  # This file
-├── CHANGELOG.md               # Version history
-├── PRIVACY_POLICY.md          # Full privacy policy
+├── README.md
+├── CHANGELOG.md
+├── PRIVACY_POLICY.md
 ├── icons/
-│   └── icon.png               # Extension icon (128×128)
-├── background/
-│   └── background.js          # Service worker — state machine, fetch, alarm logic
+│   └── icon.png
+├── background/                # Service worker modules (imported from background.js)
+│   ├── background.js          # Small entry / registration
+│   └── …                    # state machine, mail/auth checks, notifications, overlay, …
 ├── content/
-│   └── content.js             # Content script — Shadow DOM toast, Web Audio chime
+│   ├── content.js             # Message handler + overlay behaviour
+│   └── overlayDom.js          # DOM construction for the optional banner
+├── offscreen/
+│   ├── sound.html
+│   └── chimePlayback.js       # Optional notification chimes
 └── popup/
-    ├── popup.html             # Toolbar popup markup
-    ├── popup.css              # Popup styles
-    └── popup.js               # Popup logic — toggles, storage, disabled overlay
+    ├── popup.html
+    ├── popup.css
+    └── popup.js
 ```
 
 ---
 
 ## Privacy
 
-METU Mail Notifier collects **no personal data whatsoever.**
+METU Mail Notifier **does not** operate a remote server or analytics pipeline for your mail checks.
 
-- All processing is local to your device.
-- The only network requests made are to `webmail.metu.edu.tr`, using your existing browser session cookie — the same requests your browser would make if you had the tab open.
-- No email content (subjects, senders, bodies) is ever read, stored, or transmitted. Only message UIDs (integers) are compared.
-- No browsing data, analytics, or telemetry are ever collected or transmitted.
+- Processing for checks is local to your device.  
+- Automatic network requests for mail are only to `webmail.metu.edu.tr`, using your existing browser session — the same origin your browser would hit with the tab open.  
+- No email content (subjects, senders, bodies) is read, stored, or transmitted by the extension. Only numeric identifiers / counts derived from Roundcube list responses are used.  
 
-See [`PRIVACY_POLICY.md`](./PRIVACY_POLICY.md) for the full policy.
+See [`PRIVACY_POLICY.md`](./PRIVACY_POLICY.md) for the full policy, including every permission and storage key.
 
 ---
 
@@ -194,12 +169,15 @@ See [`PRIVACY_POLICY.md`](./PRIVACY_POLICY.md) for the full policy.
 | Permission | Reason |
 |---|---|
 | `alarms` | Schedule periodic auth and mail checks that survive service-worker sleep |
-| `storage` | Save and read local state/preference keys (`extensionEnabled`, `playNotificationSound`, `lastSeenId`, `lastSuccessfulCheckTs`, `hasWarnedLogin`, `lastLoginWarningTs`, `extensionStatus`, `machineState`) |
-| `scripting` | Inject `content.js` on-demand into the active tab to show the toast overlay |
-| `tabs` | Query the active tab so the toast can be injected into the right page |
-| `notifications` | Fallback OS notification when no injectable tab is available |
-| `host_permissions: *://webmail.metu.edu.tr/*` | Make credentialed fetch requests to the METU webmail server |
-| `host_permissions: <all_urls>` | Inject the notification toast into whichever tab is currently active — **optional:** declared as `optional_host_permissions`; only requested when you enable in-page overlays (not granted by default at install) |
+| `storage` | Save and read local preferences and state (`extensionEnabled`, `playNotificationSound`, `lastSeenId`, `unreadCount`, `popupActivityLog`, timestamps, `extensionStatus`, `machineState`, internal counters, …) |
+| `scripting` | Inject the extension’s own scripts when optional overlay permission is granted |
+| `tabs` | Find the active tab for optional overlay injection; open or focus METU webmail; open the GitHub link from the footer |
+| `windows` | Focus the window that contains the webmail tab when appropriate |
+| `notifications` | Show OS-level notifications (default alert path) |
+| `offscreen` | Host a hidden page used only for optional notification chimes |
+| `cookies` | Read cookies for `webmail.metu.edu.tr` only, as a local session gate before fetches |
+| `host_permissions: https://webmail.metu.edu.tr/*` | Credentialed fetches to METU webmail from the service worker |
+| `optional_host_permissions: <all_urls>` | **Optional:** inject the additive in-page banner on the active tab when you explicitly grant it — **not** granted by default at install |
 
 ---
 
@@ -217,9 +195,10 @@ See [`PRIVACY_POLICY.md`](./PRIVACY_POLICY.md) for the full policy.
 
 ## Known Limitations
 
-- The extension requires the **browser to be running** — alarms do not fire when the browser is closed.
-- The extension uses your browser's existing session cookie for `webmail.metu.edu.tr`. It does not store or handle your METU credentials.
-- If the browser restricts background service-worker wake-ups (e.g. after extended idle), the check interval may be delayed beyond the nominal 1/5-minute targets.
+- The extension requires the **browser to be running** — alarms do not fire when the browser is closed.  
+- It uses your browser’s existing session cookie for `webmail.metu.edu.tr`. It does not store or handle your METU password.  
+- If the browser restricts background service-worker wake-ups (e.g. after extended idle), check intervals may be delayed beyond the nominal 1 / 5 minute targets.  
+- Optional overlay injection requires an injectable active tab (restricted URLs such as `chrome://` pages cannot host the banner).  
 
 ---
 
@@ -235,4 +214,4 @@ This project is licensed under the **MIT License** — see the [LICENSE](./LICEN
 
 ---
 
-*METU Mail Notifier v1.4.1 · MV3 · Chrome / Edge · April 13, 2026*
+*METU Mail Notifier v1.5.0 · MV3 · Chrome / Edge · April 17, 2026*

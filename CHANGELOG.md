@@ -6,6 +6,49 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.5.0] — 2026-04-17
+
+### Added
+
+- **Popup INBOX unread + recent activity** — the popup shows the same persisted
+  unread total as the toolbar badge while monitoring, plus a short capped list of
+  non-identifying check outcomes (no subjects or senders).
+- **Optional in-page toast** — you can grant access to **all websites** so
+  the extension can show a short on-page banner on your active tab alongside
+  Chrome notifications; native notifications always still fire. Grant or revoke
+  from the popup when the extension is enabled.
+
+### Changed
+
+- **Service worker is now an ES module** — `background/background.js` is a small
+  entry file; logic lives in focused modules for easier maintenance and testing.
+- **Notifications** — new mail, “no new mail,” login reminders, and session
+  expiry use `chrome.notifications` (OS-level) by default; optional overlay is
+  additive when permitted.
+- **Notification sound** — optional chimes play in a hidden **offscreen**
+  extension page (short synthesized audio routed for reliable MV3 playback), not
+  in arbitrary website tabs.
+- **Toolbar badge** — shows INBOX unread count from the last successful list parse
+  while monitoring (non-identifying integer only).
+- **Popup** — clearer consent copy for optional overlay permission, improved
+  accessibility (focus and `inert` when paused), layout polish, and **Open Inbox**
+  in the header row.
+- **Content script** — overlay UI built with DOM APIs and a closed Shadow root for
+  isolation from host page styles (`overlayDom.js` + `content.js`).
+
+### Fixed
+
+- **Mail check on deceptive 200 responses** — treats login HTML and session edge
+  cases more reliably before assuming the inbox JSON is valid.
+- **Cold-start reconcile overlap** — `reconcileRuntimeState` is single-flight so
+  the service worker’s initial reconcile and `runtime.onStartup` cannot
+  interleave alarm repair work (avoids extra churn on Chrome / Edge wake timing).
+- **Window focus after notification** — `windows` permission is declared so
+  `chrome.windows.update` can focus the webmail window reliably; tab activation
+  still runs even if focus fails.
+
+---
+
 ## [1.4.1] — 2026-04-13
 
 ### Fixed

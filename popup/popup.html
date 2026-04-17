@@ -26,13 +26,61 @@
 
     <!-- ── Main content ───────────────────────────────────────────── -->
     <main class="main" id="mainContent">
-      <section class="section">
+      <div class="main-pausable last-check-group">
+        <div class="last-check-row">
+          <button type="button" id="openInboxBtn" class="btn-open-inbox" title="Open METU webmail inbox">
+            Open Inbox
+          </button>
+          <div class="last-check-meta">
+            <span class="last-check-text">Last checked: <strong id="lastCheckTime">Never</strong></span>
+            <button id="manualCheckBtn" class="icon-btn" title="Check now" aria-label="Check now">
+              <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div
+          id="status"
+          class="toast toast--below-pref"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></div>
+      </div>
+
+      <div class="main-stack main-pausable">
+        <section class="section section--unread" aria-labelledby="unreadHeading">
+          <div class="unread-card" role="region" aria-labelledby="unreadHeading">
+            <h2 class="unread-card__title" id="unreadHeading">Unread Messages</h2>
+            <div class="unread-card__figure">
+              <p class="unread-count" id="unreadCountValue" aria-live="polite">—</p>
+            </div>
+            <p class="unread-hint" id="unreadHint"></p>
+          </div>
+        </section>
+
+        <section class="section section--activity" aria-labelledby="activityHeading">
+          <div class="activity-head">
+            <p class="section-label section-label--activity" id="activityHeading">Recent activity</p>
+            <div class="status-row status-row--inline" id="status-row" aria-live="polite" aria-label="Extension status">
+              <span class="status-dot" id="status-dot"></span>
+              <span class="status-label" id="status-label">Loading...</span>
+              <span class="status-detail" id="status-detail"></span>
+            </div>
+          </div>
+          <ul class="activity-list" id="activityList" role="list" aria-label="Recent mail checks"></ul>
+        </section>
+      </div>
+
+      <section class="section main-pausable">
         <p class="section-label">Settings</p>
         <div class="option-list">
           <div class="option-row">
             <div class="option-text">
               <span class="option-title">Notification Sound</span>
-              <span class="option-desc">Play a chime when new mail arrives</span>
+              <span class="option-desc">Short chimes for new mail, no-new-mail checks, and session-expired alerts — not for “please log in” reminders</span>
             </div>
             <label class="toggle toggle--sm">
               <input type="checkbox" id="soundToggle" aria-label="Play notification sound" />
@@ -44,27 +92,32 @@
         </div>
       </section>
 
-      <div class="last-check-row">
-        <span class="last-check-text">Last checked: <strong id="lastCheckTime">Never</strong></span>
-        <button id="manualCheckBtn" class="icon-btn" title="Check now" aria-label="Check now">
-          <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="23 4 23 10 17 10"></polyline>
-            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-          </svg>
-        </button>
-      </div>
-
-      <div id="status" class="toast toast--below-pref" aria-live="polite"></div>
-
-      <div class="status-row" id="status-row" aria-live="polite" aria-label="Extension status">
-        <span class="status-dot" id="status-dot"></span>
-        <span class="status-label" id="status-label">Loading...</span>
-        <span class="status-detail" id="status-detail"></span>
-      </div>
-
-      <button id="btn-request-overlay" class="btn-secondary" style="display:none">
-        Enable in-page overlay
-      </button>
+      <!-- Not .main-pausable: grant stays usable when extension is paused (see applyMasterState). -->
+      <aside
+        class="overlay-consent overlay-consent--above-pause"
+        id="overlayConsentBar"
+        aria-label="Optional permission for in-page mail toast on all websites"
+      >
+        <details class="overlay-consent__details" id="overlayConsentDetails">
+          <summary class="overlay-consent__summary">
+            <span class="overlay-consent__title">In-page toast (optional)</span>
+          </summary>
+          <div class="overlay-consent__expandable">
+            <p class="overlay-consent__body">
+              To show a small mail notification on the site you are viewing, Chrome must allow this extension
+              <strong>access to all websites</strong>. METU Mail Notifier only injects its own overlay when it
+              notifies you; it does not read passwords or form fields. You can remove this access anytime in
+              your browser’s extension settings.
+            </p>
+          </div>
+        </details>
+        <div class="overlay-consent__row">
+          <span class="overlay-consent__status" id="overlayAllSitesStatus" role="status">Checking…</span>
+          <button type="button" class="overlay-consent__btn" id="overlayAllSitesGrantBtn">
+            Grant access to all websites
+          </button>
+        </div>
+      </aside>
 
       <!-- ── Disabled overlay (inside main so header toggle stays accessible) -->
       <div class="disabled-overlay" id="disabledOverlay">
@@ -90,6 +143,6 @@
       <p class="popup-footer__meta">MV3 · Edge / Chrome</p>
     </footer>
 
-    <script src="popup.js"></script>
+    <script type="module" src="popup.js"></script>
   </body>
 </html>
