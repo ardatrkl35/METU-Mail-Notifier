@@ -1,0 +1,12 @@
+export const AUTH_CHECK_ALARM = 'auth_check';
+export const MAIL_CHECK_ALARM = 'mail_check';
+export const AUTH_CHECK_INTERVAL_MINUTES = 1;
+export const MAIL_CHECK_INTERVAL_MINUTES = 5;
+export const BASE_URL = 'https://webmail.metu.edu.tr/';
+export const INBOX_URL = 'https://webmail.metu.edu.tr/?_task=mail&_mbox=INBOX';
+export const MAIL_NOTIFICATION_ID = 'metumail-new-mail';
+export const LOGIN_NOTIFICATION_ID = 'metumail-login-required';
+export const NO_NEW_MAIL_NOTIFICATION_ID = 'metumail-no-new-mail';
+export const LOGIN_WARNING_INTERVAL_MS = 30 * 60 * 1000;
+export const TOKEN_UNAVAILABLE_THRESHOLD = 3;
+export const LOG_PREFIX = '[METU Mail Notifier]';
