@@ -8,7 +8,10 @@
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 ![Privacy](https://img.shields.io/badge/data_collected-none-success)
 
-**Repository:** [github.com/ardatrkl35/METU-Mail-Notifier](https://github.com/ardatrkl35/METU-Mail-Notifier)
+![Promotional banner: METU Mail Notifier popup with unread count on a METU-themed background](./docs/store-banner.png)
+
+**Repository:** [github.com/ardatrkl35/METU-Mail-Notifier](https://github.com/ardatrkl35/METU-Mail-Notifier)  
+**Microsoft Edge Add-ons:** [METU Mail Notifier](https://microsoftedge.microsoft.com/addons/detail/metu-mail-notifier/egjodlpddmcmpgeefnekeglfpbpeldlm)
 
 ---
 
@@ -92,6 +95,12 @@ METU Mail Notifier runs a two-state check loop in the background:
 
 ---
 
+## Installation (Microsoft Edge)
+
+Install from the [Microsoft Edge Add-ons listing](https://microsoftedge.microsoft.com/addons/detail/metu-mail-notifier/egjodlpddmcmpgeefnekeglfpbpeldlm), then sign in to [webmail.metu.edu.tr](https://webmail.metu.edu.tr) in the same browser profile so the extension can use your session.
+
+---
+
 ## Installation (Manual / Developer Mode)
 
 1. **Download or clone** this repository:
@@ -133,6 +142,8 @@ METU-Mail-Notifier/
 ├── README.md
 ├── CHANGELOG.md
 ├── PRIVACY_POLICY.md
+├── docs/
+│   └── store-banner.png       # README / store promo graphic
 ├── icons/
 │   └── icon.png
 ├── background/                # Service worker modules (imported from background.js)
@@ -186,7 +197,7 @@ See [`PRIVACY_POLICY.md`](./PRIVACY_POLICY.md) for the full policy, including ev
 | Browser | Status |
 |---|---|
 | Google Chrome | Fully supported |
-| Microsoft Edge (Chromium) | Fully supported |
+| Microsoft Edge (Chromium) | Fully supported ([Add-ons listing](https://microsoftedge.microsoft.com/addons/detail/metu-mail-notifier/egjodlpddmcmpgeefnekeglfpbpeldlm)) |
 | Brave, Opera, Vivaldi | Compatible (Chromium-based) |
 | Firefox | Not supported (requires MV2 port) |
 | Safari | Not supported |

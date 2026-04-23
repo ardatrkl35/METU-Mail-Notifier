@@ -2,7 +2,7 @@
 
 **Extension Name:** METU Mail Notifier  
 **Version:** 1.5.0  
-**Platform:** Google Chrome / Microsoft Edge (Manifest V3) — manual install  
+**Platform:** Google Chrome / Microsoft Edge (Manifest V3) — [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/metu-mail-notifier/egjodlpddmcmpgeefnekeglfpbpeldlm) or manual install from this repository  
 **Last Updated:** April 17, 2026
 
 ---
