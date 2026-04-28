@@ -6,6 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [Unreleased]
+
+---
+
+## [1.5.1] — 2026-04-28
+
+### Added
+
+- **Appearance (System / Light / Dark)** — popup theme preference is stored in `chrome.storage.local` (`appearanceTheme`); `popup/themeBoot.js` runs before `popup.css` so the first paint matches the saved or system theme without a flash.
+- **Themed optional toast** — when overlay permission is granted, the in-page banner uses the same effective light/dark styling as your appearance choice (background passes preference into the content script).
+
+### Changed
+
+- **Popup** — layout and controls refresh, including an accessible segmented control for appearance and wiring to storage and system `prefers-color-scheme` updates.
+- **Documentation** — README includes the Microsoft Edge Add-ons listing link and store-style banner (`docs/store-banner.png`); `PRIVACY_POLICY.md` notes the Edge Add-ons distribution channel and this version’s date.
+
+---
+
 ## [1.5.0] — 2026-04-17
 
 ### Added

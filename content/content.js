@@ -61,21 +61,34 @@
     :host-context(*) {}
 
     .mm-toast {
+      --mm-bg: #ffffff;
+      --mm-border: #ebebeb;
+      --mm-shadow-main: 0 4px 20px rgba(227, 24, 55, 0.12);
+      --mm-shadow-soft: 0 2px 10px rgba(0, 0, 0, 0.06);
+      --mm-text-primary: #1a1a1a;
+      --mm-text-body: #4b4b4b;
+      --mm-close: #6b7280;
+      --mm-close-hover: var(--mm-accent, #e31837);
+      --mm-btn-secondary-bg: #f3f3f5;
+      --mm-btn-secondary-hover-bg: #ebebef;
+      --mm-btn-secondary-border: #e5e5e5;
+      --mm-btn-secondary-hover-border: #d8d8dc;
+      --mm-btn-secondary-fg: var(--mm-accent, #e31837);
       position: fixed;
       top: 20px;
       right: 20px;
       box-sizing: border-box;
       width: 320px;
-      background: #ffffff;
+      background: var(--mm-bg);
       border-radius: 10px;
-      border: 1px solid #ebebeb;
+      border: 1px solid var(--mm-border);
       border-left: 4px solid var(--mm-accent, #e31837);
       box-shadow:
-        0 4px 20px rgba(227, 24, 55, 0.12),
-        0 2px 10px rgba(0, 0, 0, 0.06);
+        var(--mm-shadow-main),
+        var(--mm-shadow-soft);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       font-size: 14px;
-      color: #1a1a1a;
+      color: var(--mm-text-primary);
       pointer-events: auto;
       cursor: default;
       display: flex;
@@ -84,6 +97,22 @@
       opacity: 0;
       transform: translateX(24px);
       transition: opacity 0.22s ease, transform 0.22s ease;
+    }
+
+    .mm-toast[data-theme="dark"] {
+      --mm-bg: #1a1f2b;
+      --mm-border: #30384a;
+      --mm-shadow-main: 0 6px 22px rgba(0, 0, 0, 0.45);
+      --mm-shadow-soft: 0 2px 10px rgba(0, 0, 0, 0.35);
+      --mm-text-primary: #f3f4f6;
+      --mm-text-body: #d3d9e2;
+      --mm-close: #a7b1bf;
+      --mm-close-hover: #ff8da1;
+      --mm-btn-secondary-bg: #1f2533;
+      --mm-btn-secondary-hover-bg: #2a3242;
+      --mm-btn-secondary-border: #394255;
+      --mm-btn-secondary-hover-border: #4a5770;
+      --mm-btn-secondary-fg: #ff8da1;
     }
 
     .mm-toast.mm-visible {
@@ -120,7 +149,7 @@
     .mm-close {
       background: none;
       border: none;
-      color: #6b7280;
+      color: var(--mm-close);
       cursor: pointer;
       font-size: 16px;
       line-height: 1;
@@ -129,12 +158,12 @@
       align-items: center;
     }
 
-    .mm-close:hover { color: #e31837; }
+    .mm-close:hover { color: var(--mm-close-hover); }
 
     .mm-body {
       padding: 0 14px 10px;
       font-size: 13px;
-      color: #4b4b4b;
+      color: var(--mm-text-body);
       line-height: 1.45;
     }
 
@@ -165,14 +194,14 @@
     }
 
     .mm-btn-secondary {
-      background: #f3f3f5;
-      color: #e31837;
-      border: 1px solid #e5e5e5;
+      background: var(--mm-btn-secondary-bg);
+      color: var(--mm-btn-secondary-fg);
+      border: 1px solid var(--mm-btn-secondary-border);
     }
 
     .mm-btn-secondary:hover {
-      background: #ebebef;
-      border-color: #d8d8dc;
+      background: var(--mm-btn-secondary-hover-bg);
+      border-color: var(--mm-btn-secondary-hover-border);
     }
 
     .mm-progress {
@@ -201,6 +230,7 @@
     const toast = buildToast({
       kind,
       count,
+      themePreference: message.themePreference,
       onOpen: () => {
         chrome.runtime.sendMessage({ type: 'OPEN_INBOX', url: inboxUrl });
       },

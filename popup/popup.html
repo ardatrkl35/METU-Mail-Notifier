@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>METU Mail Notifier</title>
+    <script src="themeBoot.js"></script>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
@@ -57,67 +58,106 @@
             <div class="unread-card__figure">
               <p class="unread-count" id="unreadCountValue" aria-live="polite">—</p>
             </div>
-            <p class="unread-hint" id="unreadHint"></p>
+            <p class="unread-hint" id="unreadHint" hidden></p>
           </div>
-        </section>
-
-        <section class="section section--activity" aria-labelledby="activityHeading">
-          <div class="activity-head">
-            <p class="section-label section-label--activity" id="activityHeading">Recent activity</p>
-            <div class="status-row status-row--inline" id="status-row" aria-live="polite" aria-label="Extension status">
-              <span class="status-dot" id="status-dot"></span>
-              <span class="status-label" id="status-label">Loading...</span>
-              <span class="status-detail" id="status-detail"></span>
-            </div>
-          </div>
-          <ul class="activity-list" id="activityList" role="list" aria-label="Recent mail checks"></ul>
         </section>
       </div>
 
-      <section class="section main-pausable">
-        <p class="section-label">Settings</p>
-        <div class="option-list">
-          <div class="option-row">
-            <div class="option-text">
-              <span class="option-title">Notification Sound</span>
-              <span class="option-desc">Short chimes for new mail, no-new-mail checks, and session-expired alerts — not for “please log in” reminders</span>
-            </div>
-            <label class="toggle toggle--sm">
-              <input type="checkbox" id="soundToggle" aria-label="Play notification sound" />
-              <span class="toggle-track">
-                <span class="toggle-thumb"></span>
-              </span>
-            </label>
-          </div>
-        </div>
-      </section>
+      <details class="options-accordion" id="optionsAccordion">
+        <summary class="options-accordion__summary">
+          <span class="options-accordion__title">Options</span>
+        </summary>
+        <div class="options-accordion__body">
+          <div class="options-accordion__pausable main-pausable">
+            <section class="section section--activity" aria-labelledby="activityHeading">
+              <div class="activity-head">
+                <p class="section-label section-label--activity" id="activityHeading">Recent activity</p>
+                <div class="status-row status-row--inline" id="status-row" aria-live="polite" aria-label="Extension status">
+                  <span class="status-dot" id="status-dot"></span>
+                  <span class="status-label" id="status-label">Loading...</span>
+                  <span class="status-detail" id="status-detail"></span>
+                </div>
+              </div>
+              <ul class="activity-list" id="activityList" role="list" aria-label="Recent mail checks"></ul>
+            </section>
 
-      <!-- Not .main-pausable: grant stays usable when extension is paused (see applyMasterState). -->
-      <aside
-        class="overlay-consent overlay-consent--above-pause"
-        id="overlayConsentBar"
-        aria-label="Optional permission for in-page mail toast on all websites"
-      >
-        <details class="overlay-consent__details" id="overlayConsentDetails">
-          <summary class="overlay-consent__summary">
-            <span class="overlay-consent__title">In-page toast (optional)</span>
-          </summary>
-          <div class="overlay-consent__expandable">
-            <p class="overlay-consent__body">
-              To show a small mail notification on the site you are viewing, Chrome must allow this extension
-              <strong>access to all websites</strong>. METU Mail Notifier only injects its own overlay when it
-              notifies you; it does not read passwords or form fields. You can remove this access anytime in
-              your browser’s extension settings.
-            </p>
+            <section class="section">
+              <p class="section-label">Settings</p>
+              <div class="option-list">
+                <div class="option-row option-row--stacked option-row--appearance">
+                  <div class="option-text">
+                    <span class="option-title" id="themeRadiogroupLabel">Appearance</span>
+                    <span class="option-desc">Theme for popup and in-page notifications.</span>
+                  </div>
+                  <div
+                    class="theme-segmented"
+                    role="radiogroup"
+                    aria-labelledby="themeRadiogroupLabel"
+                  >
+                    <label class="theme-segmented__option">
+                      <input
+                        type="radio"
+                        name="appearanceTheme"
+                        value="system"
+                        class="theme-segmented__input"
+                        checked
+                      />
+                      <span class="theme-segmented__text">System</span>
+                    </label>
+                    <label class="theme-segmented__option">
+                      <input type="radio" name="appearanceTheme" value="light" class="theme-segmented__input" />
+                      <span class="theme-segmented__text">Light</span>
+                    </label>
+                    <label class="theme-segmented__option">
+                      <input type="radio" name="appearanceTheme" value="dark" class="theme-segmented__input" />
+                      <span class="theme-segmented__text">Dark</span>
+                    </label>
+                  </div>
+                </div>
+                <div class="option-row">
+                  <div class="option-text">
+                    <span class="option-title">Notification Sound</span>
+                    <span class="option-desc">Short chimes for new mail, no-new-mail checks, and session-expired alerts — not for “please log in” reminders</span>
+                  </div>
+                  <label class="toggle toggle--sm">
+                    <input type="checkbox" id="soundToggle" aria-label="Play notification sound" />
+                    <span class="toggle-track">
+                      <span class="toggle-thumb"></span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </section>
           </div>
-        </details>
-        <div class="overlay-consent__row">
-          <span class="overlay-consent__status" id="overlayAllSitesStatus" role="status">Checking…</span>
-          <button type="button" class="overlay-consent__btn" id="overlayAllSitesGrantBtn">
-            Grant access to all websites
-          </button>
+
+          <!-- Not inside .main-pausable: grant stays usable when extension is paused (see applyMasterState). -->
+          <aside
+            class="overlay-consent overlay-consent--above-pause"
+            id="overlayConsentBar"
+            aria-label="Optional permission for in-page mail toast on all websites"
+          >
+            <details class="overlay-consent__details" id="overlayConsentDetails">
+              <summary class="overlay-consent__summary">
+                <span class="overlay-consent__title">In-page toast (optional)</span>
+              </summary>
+              <div class="overlay-consent__expandable">
+                <p class="overlay-consent__body">
+                  To show a small mail notification on the site you are viewing, Chrome must allow this extension
+                  <strong>access to all websites</strong>. METU Mail Notifier only injects its own overlay when it
+                  notifies you; it does not read passwords or form fields. You can remove this access anytime in
+                  your browser’s extension settings.
+                </p>
+              </div>
+            </details>
+            <div class="overlay-consent__row">
+              <span class="overlay-consent__status" id="overlayAllSitesStatus" role="status">Checking…</span>
+              <button type="button" class="overlay-consent__btn" id="overlayAllSitesGrantBtn">
+                Grant access to all websites
+              </button>
+            </div>
+          </aside>
         </div>
-      </aside>
+      </details>
 
       <!-- ── Disabled overlay (inside main so header toggle stays accessible) -->
       <div class="disabled-overlay" id="disabledOverlay">
@@ -142,6 +182,49 @@
       </button>
       <p class="popup-footer__meta">MV3 · Edge / Chrome</p>
     </footer>
+
+    <section
+      id="injectionToastDebug"
+      class="injection-toast-debug"
+      hidden
+      aria-label="Developer in-page toast samples"
+    >
+      <p class="injection-toast-debug__title">Dev — in-page toast samples</p>
+      <p class="injection-toast-debug__kbd">
+        <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> toggles this panel
+      </p>
+      <p class="injection-toast-debug__hint">
+        Active tab must be a normal <strong>http(s)</strong> page (not the store or <code>chrome://</code>).
+        Grant optional <strong>access to all websites</strong> above if you have not already.
+      </p>
+      <div class="injection-toast-debug__grid" role="group" aria-label="Fire sample in-page toasts">
+        <button type="button" class="injection-toast-debug__btn" data-debug-injection-kind="noNewMail">
+          No new mail
+        </button>
+        <button
+          type="button"
+          class="injection-toast-debug__btn"
+          data-debug-injection-kind="newMail"
+          data-debug-injection-count="1"
+        >
+          New mail (×1)
+        </button>
+        <button
+          type="button"
+          class="injection-toast-debug__btn"
+          data-debug-injection-kind="newMail"
+          data-debug-injection-count="5"
+        >
+          New mail (×5)
+        </button>
+        <button type="button" class="injection-toast-debug__btn" data-debug-injection-kind="pleaseLogin">
+          Not signed in
+        </button>
+        <button type="button" class="injection-toast-debug__btn" data-debug-injection-kind="sessionExpired">
+          Session expired
+        </button>
+      </div>
+    </section>
 
     <script type="module" src="popup.js"></script>
   </body>

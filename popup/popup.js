@@ -1,13 +1,24 @@
 import { INBOX_URL } from '../background/constants.js';
+import { showNotificationOverlay } from '../background/overlay.js';
 import { reasonTextFor } from '../background/reasonText.js';
-import { STORAGE_KEYS, normalizePopupActivityLog } from '../background/storageSchema.js';
+import {
+  STORAGE_KEYS,
+  normalizeAppearanceTheme,
+  normalizePopupActivityLog,
+} from '../background/storageSchema.js';
 
 const REPO_URL = "https://github.com/ardatrkl35/METU-Mail-Notifier";
 
 const STATUS_CHECKING_LABEL = 'Checking...';
+const THEME_SYSTEM = 'system';
+const THEME_LIGHT = 'light';
+const THEME_DARK = 'dark';
+/** Sync cache for themeBoot.js — must match popup/themeBoot.js */
+const THEME_CACHE_LS_KEY = 'mmn_appearanceTheme';
 
 const masterToggle = document.getElementById("masterToggle");
 const soundToggle = document.getElementById("soundToggle");
+const themeSegment = document.querySelector(".theme-segmented");
 const popupFooter = document.getElementById("popupFooter");
 const disabledOverlay = document.getElementById("disabledOverlay");
 const statusNode = document.getElementById("status");
@@ -21,6 +32,8 @@ const overlayAllSitesGrantBtn = document.getElementById("overlayAllSitesGrantBtn
 const unreadCountValue = document.getElementById("unreadCountValue");
 const unreadHint = document.getElementById("unreadHint");
 const activityList = document.getElementById("activityList");
+const themeMediaQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+let themePreference = THEME_SYSTEM;
 
 const ALL_SITES_ORIGINS = { origins: ["<all_urls>"] };
 
@@ -65,6 +78,34 @@ function applyMasterState(enabled) {
     el.inert = blockSubtree;
   });
   if (popupFooter) popupFooter.inert = blockSubtree;
+}
+
+function normalizeThemePreference(value) {
+  return normalizeAppearanceTheme(value);
+}
+
+function resolveEffectiveTheme(preference) {
+  const pref = normalizeThemePreference(preference);
+  if (pref === THEME_DARK) return THEME_DARK;
+  if (pref === THEME_LIGHT) return THEME_LIGHT;
+  return themeMediaQuery?.matches ? THEME_DARK : THEME_LIGHT;
+}
+
+function applyThemePreference(preference) {
+  themePreference = normalizeThemePreference(preference);
+  const effectiveTheme = resolveEffectiveTheme(themePreference);
+  document.documentElement.dataset.theme = effectiveTheme;
+  document.documentElement.style.colorScheme = effectiveTheme;
+  try {
+    localStorage.setItem(THEME_CACHE_LS_KEY, themePreference);
+  } catch (_) {
+    /* private mode / disabled storage */
+  }
+  if (themeSegment) {
+    themeSegment.querySelectorAll('input[name="appearanceTheme"]').forEach((radio) => {
+      radio.checked = radio.value === themePreference;
+    });
+  }
 }
 
 function formatTime(ts) {
@@ -151,6 +192,44 @@ function setupOverlayConsentControls() {
   });
 }
 
+function setupInjectionToastDebugPanel() {
+  const panel = document.getElementById('injectionToastDebug');
+  if (!panel) return;
+
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.shiftKey && (e.key === 'd' || e.key === 'D')) {
+      e.preventDefault();
+      panel.hidden = !panel.hidden;
+    }
+  });
+
+  panel.querySelectorAll('[data-debug-injection-kind]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const kind = btn.getAttribute('data-debug-injection-kind');
+      if (!kind) return;
+      const countRaw = btn.getAttribute('data-debug-injection-count');
+      const count = countRaw != null && countRaw !== '' ? Number(countRaw) : 0;
+      const safeCount = Number.isFinite(count) && count >= 0 ? Math.floor(count) : 0;
+      try {
+        const ok = await showNotificationOverlay({ kind, count: safeCount });
+        if (!ok) {
+          showToast(
+            'Could not show in-page toast. Use an http(s) tab as the active window tab and grant optional access to all websites.',
+            true,
+          );
+        }
+      } catch (err) {
+        console.warn('[METU Mail Notifier] debug injection toast:', err);
+        showToast(err?.message || String(err), true);
+      }
+    });
+  });
+
+  console.info(
+    '[METU Mail Notifier] Dev: focus this popup and press Ctrl+Shift+D to show in-page toast sample buttons.',
+  );
+}
+
 function setupRepoFooter() {
   if (extensionVersionNode) {
     try {
@@ -163,6 +242,35 @@ function setupRepoFooter() {
     repoLinkBtn.addEventListener("click", () => {
       chrome.tabs.create({ url: REPO_URL });
     });
+  }
+}
+
+function setupThemeControls() {
+  if (themeSegment) {
+    themeSegment.addEventListener('change', async (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement) || target.name !== 'appearanceTheme') return;
+      const next = normalizeThemePreference(target.value);
+      try {
+        await writeStorage({ [STORAGE_KEYS.appearanceTheme]: next });
+        applyThemePreference(next);
+      } catch (error) {
+        console.error("[METU Mail Notifier] Failed to save theme preference:", error);
+        applyThemePreference(themePreference);
+        showToast("Could not save setting.", true);
+      }
+    });
+  }
+
+  const onSystemThemeChange = () => {
+    if (themePreference === THEME_SYSTEM) {
+      applyThemePreference(THEME_SYSTEM);
+    }
+  };
+  if (themeMediaQuery?.addEventListener) {
+    themeMediaQuery.addEventListener('change', onSystemThemeChange);
+  } else if (themeMediaQuery?.addListener) {
+    themeMediaQuery.addListener(onSystemThemeChange);
   }
 }
 
@@ -216,6 +324,7 @@ function updateUnreadPanel(enabled, machineState, unreadCount) {
   if (!unreadCountValue || !unreadHint) return;
   const setHint = (text, subtle) => {
     unreadHint.textContent = text;
+    unreadHint.hidden = !text;
     unreadHint.classList.toggle('unread-hint--subtle', !!subtle);
   };
   if (!enabled) {
@@ -231,10 +340,12 @@ function updateUnreadPanel(enabled, machineState, unreadCount) {
   const n = Number(unreadCount);
   const safe = Number.isFinite(n) && n >= 0 ? Math.min(Math.floor(n), 999_999) : 0;
   unreadCountValue.textContent = String(safe);
-  setHint('(From the last successful check)', false);
+  setHint('', false);
 }
 
 async function initialize() {
+  setupThemeControls();
+  setupInjectionToastDebugPanel();
   setupRepoFooter();
   setupOverlayConsentControls();
   await refreshOverlayAllSitesConsentUI();
@@ -246,13 +357,16 @@ async function initialize() {
       STORAGE_KEYS.machineState,
       STORAGE_KEYS.unreadCount,
       STORAGE_KEYS.popupActivityLog,
+      STORAGE_KEYS.appearanceTheme,
     ]);
     const enabled = stored[STORAGE_KEYS.extensionEnabled] !== false;
     const soundOn = stored[STORAGE_KEYS.playNotificationSound] !== false;
     const machineState = stored[STORAGE_KEYS.machineState] === 'STATE_2' ? 'STATE_2' : 'STATE_1';
+    const appearanceTheme = normalizeThemePreference(stored[STORAGE_KEYS.appearanceTheme]);
 
     masterToggle.checked = enabled;
     soundToggle.checked = soundOn;
+    applyThemePreference(appearanceTheme);
     applyMasterState(enabled);
     updateLastCheckTime(stored[STORAGE_KEYS.lastSuccessfulCheckTs]);
     updateUnreadPanel(enabled, machineState, stored[STORAGE_KEYS.unreadCount]);
@@ -305,6 +419,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if (area === 'local' && changes.extensionStatus) {
     updateStatusUI(changes.extensionStatus.newValue);
+  }
+  if (area === 'local' && changes[STORAGE_KEYS.appearanceTheme]) {
+    applyThemePreference(changes[STORAGE_KEYS.appearanceTheme].newValue);
   }
   if (area === 'local') {
     const ext = changes[STORAGE_KEYS.extensionEnabled];

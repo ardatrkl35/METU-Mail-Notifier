@@ -5,6 +5,7 @@
 
 export const STORAGE_KEYS = Object.freeze({
   extensionEnabled: 'extensionEnabled',
+  appearanceTheme: 'appearanceTheme',
   hasWarnedLogin: 'hasWarnedLogin',
   lastLoginWarningTs: 'lastLoginWarningTs',
   lastSeenId: 'lastSeenId',
@@ -38,6 +39,10 @@ function normalizeBooleanPreference(value, defaultWhenMissing) {
 
 export function normalizeExtensionEnabled(value) {
   return normalizeBooleanPreference(value, true);
+}
+
+export function normalizeAppearanceTheme(value) {
+  return value === 'light' || value === 'dark' ? value : 'system';
 }
 
 /** Legacy flag: only literal true counts as warned (matches onInstalled + auth path). */
@@ -149,6 +154,7 @@ export function normalizeStorageSnapshot(raw, options = {}) {
   const storedTsNum = Number(storedTsRaw);
 
   out[STORAGE_KEYS.extensionEnabled] = normalizeExtensionEnabled(base[STORAGE_KEYS.extensionEnabled]);
+  out[STORAGE_KEYS.appearanceTheme] = normalizeAppearanceTheme(base[STORAGE_KEYS.appearanceTheme]);
   out[STORAGE_KEYS.hasWarnedLogin] = warned;
   out[STORAGE_KEYS.lastLoginWarningTs] = resolveLastLoginWarningTs(
     Number.isFinite(storedTsNum) ? storedTsNum : NaN,

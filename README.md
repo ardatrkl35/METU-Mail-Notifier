@@ -2,7 +2,7 @@
 
 > Quietly checks your METU Roundcube inbox and uses your browser’s **native notifications** when new mail arrives or when you need to sign in again. An optional in-page banner can appear on your active tab if you explicitly grant **access to all websites** — OS notifications always still fire.
 
-![Version](https://img.shields.io/badge/version-1.5.0-blue)
+![Version](https://img.shields.io/badge/version-1.5.1-blue)
 ![Manifest](https://img.shields.io/badge/manifest-v3-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Edge_%2F_Chrome-0078D4)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
@@ -225,4 +225,4 @@ This project is licensed under the **MIT License** — see the [LICENSE](./LICEN
 
 ---
 
-*METU Mail Notifier v1.5.0 · MV3 · Chrome / Edge · April 17, 2026*
+*METU Mail Notifier v1.5.1 · MV3 · Chrome / Edge · April 28, 2026*

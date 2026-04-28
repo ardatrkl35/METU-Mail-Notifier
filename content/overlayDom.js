@@ -11,6 +11,16 @@
   const BRAND_COLOR = '#e31837';
   const TOAST_DURATION_MS = 5000;
 
+  function normalizeThemePreference(value) {
+    return value === 'dark' || value === 'light' ? value : 'system';
+  }
+
+  function resolveEffectiveTheme(preference, win) {
+    const pref = normalizeThemePreference(preference);
+    if (pref === 'dark' || pref === 'light') return pref;
+    return win.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+
   /**
    * @param {Document} doc
    */
@@ -35,11 +45,12 @@
      * @param {{
      *   kind: 'newMail'|'noNewMail'|'sessionExpired'|'pleaseLogin',
      *   count?: number,
+     *   themePreference?: 'system'|'light'|'dark',
      *   onOpen?: () => void,
      *   onDismiss?: () => void,
      * }} opts
      */
-    function buildToast({ kind, count = 0, onOpen, onDismiss }) {
+    function buildToast({ kind, count = 0, themePreference = 'system', onOpen, onDismiss }) {
       let title = 'METU Mail Notifier';
       let bodyText = '';
       let showOpenBtn = false;
@@ -73,6 +84,8 @@
       }
 
       const toast = el('div', { className: 'mm-toast' });
+      const effectiveTheme = resolveEffectiveTheme(themePreference, win);
+      toast.dataset.theme = effectiveTheme;
       toast.style.setProperty('--mm-accent', BRAND_COLOR);
 
       const header = el('div', { className: 'mm-header' });

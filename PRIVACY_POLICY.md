@@ -1,9 +1,9 @@
 # Privacy Policy — METU Mail Notifier
 
 **Extension Name:** METU Mail Notifier  
-**Version:** 1.5.0  
+**Version:** 1.5.1  
 **Platform:** Google Chrome / Microsoft Edge (Manifest V3) — [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/metu-mail-notifier/egjodlpddmcmpgeefnekeglfpbpeldlm) or manual install from this repository  
-**Last Updated:** April 17, 2026
+**Last Updated:** April 28, 2026
 
 ---
 
